@@ -193,17 +193,28 @@ def summarize(editorials, edition, start, end):
 
 한국어로만, 5분 안에 읽을 수 있게 간결하게 써 주세요."""
 
-    # Gemini REST API 직접 호출 (라이브러리 버전 무관)
-    for model in ["gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-1.5-pro-latest"]:
+    # Gemini REST API 직접 호출
+    candidates = [
+        ("v1beta", "gemini-1.5-flash-latest"),
+        ("v1beta", "gemini-1.5-flash"),
+        ("v1beta", "gemini-pro"),
+        ("v1beta", "gemini-1.0-pro"),
+        ("v1",    "gemini-1.5-flash"),
+        ("v1",    "gemini-pro"),
+    ]
+    for ver, model in candidates:
         try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+            url = f"https://generativelanguage.googleapis.com/{ver}/models/{model}:generateContent?key={api_key}"
             payload = {"contents": [{"parts": [{"text": prompt}]}]}
             resp = requests.post(url, json=payload, timeout=60)
-            print(f"    Gemini {model}: {resp.status_code}")
+            print(f"    [{ver}] {model}: {resp.status_code}")
             if resp.status_code == 200:
                 return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+            else:
+                err = resp.json().get("error", {}).get("message", "")[:80]
+                print(f"    오류내용: {err}")
         except Exception as e:
-            print(f"    {model} 오류: {e}")
+            print(f"    {model} 예외: {e}")
     return "AI 요약 실패 - 원문을 직접 확인해 주세요."
 
 
@@ -277,12 +288,14 @@ def send_gmail(subject, html, plain):
     sender   = os.environ["SENDER_EMAIL"]
     password = os.environ["GMAIL_APP_PASSWORD"]
 
-    # 수신자 목록 (RECIPIENT_EMAIL ~ RECIPIENT_EMAIL6)
+    # 수신자 목록 (다양한 형식 모두 지원)
     recipients = []
-    for key in ["RECIPIENT_EMAIL", "RECIPIENT_EMAIL2", "RECIPIENT_EMAIL3",
-                "RECIPIENT_EMAIL4", "RECIPIENT_EMAIL5", "RECIPIENT_EMAIL6"]:
+    keys = ["RECIPIENT_EMAIL"]
+    for i in range(2, 11):
+        keys += [f"RECIPIENT_EMAIL{i}", f"RECIPIENT_EMAIL_{i}"]
+    for key in keys:
         email = os.environ.get(key, "").strip()
-        if email:
+        if email and email not in recipients:
             recipients.append(email)
 
     print(f"   수신자 {len(recipients)}명: {chr(44).join(recipients)}")
