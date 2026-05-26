@@ -10,7 +10,6 @@ from datetime import datetime, timezone, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-from google import genai
 import requests
 from bs4 import BeautifulSoup
 
@@ -155,10 +154,10 @@ def get_editorials():
 
 def summarize(editorials, edition, start, end):
     """Gemini AI로 요약합니다."""
-    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-
     if not editorials:
         return "수집된 사설이 없습니다."
+    
+    api_key = os.environ["GEMINI_API_KEY"]
 
     period = f"{start.strftime('%m/%d %H:%M')} ~ {end.strftime('%m/%d %H:%M')}"
     corpus = ""
@@ -194,11 +193,29 @@ def summarize(editorials, edition, start, end):
 
 한국어로만, 5분 안에 읽을 수 있게 간결하게 써 주세요."""
 
-    response = client.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=prompt
-    )
-    return response.text
+    # Gemini REST API 직접 호출
+    candidates = [
+        ("v1beta", "gemini-1.5-flash-latest"),
+        ("v1beta", "gemini-1.5-flash"),
+        ("v1beta", "gemini-pro"),
+        ("v1beta", "gemini-1.0-pro"),
+        ("v1",    "gemini-1.5-flash"),
+        ("v1",    "gemini-pro"),
+    ]
+    for ver, model in candidates:
+        try:
+            url = f"https://generativelanguage.googleapis.com/{ver}/models/{model}:generateContent?key={api_key}"
+            payload = {"contents": [{"parts": [{"text": prompt}]}]}
+            resp = requests.post(url, json=payload, timeout=60)
+            print(f"    [{ver}] {model}: {resp.status_code}")
+            if resp.status_code == 200:
+                return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+            else:
+                err = resp.json().get("error", {}).get("message", "")[:80]
+                print(f"    오류내용: {err}")
+        except Exception as e:
+            print(f"    {model} 예외: {e}")
+    return "AI 요약 실패 - 원문을 직접 확인해 주세요."
 
 
 def build_email(editorials, summary, edition, start, end):
@@ -268,21 +285,32 @@ def build_email(editorials, summary, edition, start, end):
 
 
 def send_gmail(subject, html, plain):
-    sender    = os.environ["SENDER_EMAIL"]
-    password  = os.environ["GMAIL_APP_PASSWORD"]
-    recipient = os.environ["RECIPIENT_EMAIL"]
+    sender   = os.environ["SENDER_EMAIL"]
+    password = os.environ["GMAIL_APP_PASSWORD"]
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"]    = sender
-    msg["To"]      = recipient
-    msg.attach(MIMEText(plain, "plain", "utf-8"))
-    msg.attach(MIMEText(html,  "html",  "utf-8"))
+    # 수신자 목록 (다양한 형식 모두 지원)
+    recipients = []
+    keys = ["RECIPIENT_EMAIL"]
+    for i in range(2, 11):
+        keys += [f"RECIPIENT_EMAIL{i}", f"RECIPIENT_EMAIL_{i}"]
+    for key in keys:
+        email = os.environ.get(key, "").strip()
+        if email and email not in recipients:
+            recipients.append(email)
+
+    print(f"   수신자 {len(recipients)}명: {chr(44).join(recipients)}")
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(sender, password)
-        server.sendmail(sender, recipient, msg.as_string())
-    print(f"✅ 발송 완료 → {recipient}")
+        for recipient in recipients:
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"]    = sender
+            msg["To"]      = recipient
+            msg.attach(MIMEText(plain, "plain", "utf-8"))
+            msg.attach(MIMEText(html,  "html",  "utf-8"))
+            server.sendmail(sender, recipient, msg.as_string())
+            print(f"✅ 발송 완료 → {recipient}")
 
 
 if __name__ == "__main__":
