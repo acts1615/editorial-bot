@@ -215,7 +215,7 @@ def build_email(editorials, summary, edition, start, end):
         "Thu","목").replace("Fri","금").replace("Sat","토").replace("Sun","일")
     md  = datetime.now(KST).strftime("%m/%d")
     판   = "오전판" if datetime.now(KST).hour < 12 else "저녁판"
-    subject = f"📰 사설브리핑 | {md} ({dow}) {판}"
+    subject = f"📰 잡다한 사설 | {md} ({dow}) {판}"
 
     summary_html = summary.replace("\n", "<br>")
 
