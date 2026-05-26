@@ -195,10 +195,7 @@ def summarize(editorials, edition, start, end):
 
 한국어로만, 5분 안에 읽을 수 있게 간결하게 써 주세요."""
 
-    response = client.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=prompt
-    )
+    response = client.generate_content(prompt)
     return response.text
 
 
