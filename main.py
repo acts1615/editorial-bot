@@ -195,10 +195,10 @@ def summarize(editorials, edition, start, end):
 
     # 1순위: Gemini REST API
     gemini_candidates = [
-        ("v1beta", "gemini-1.5-flash-latest"),
+        ("v1beta", "gemini-2.0-flash"),
+        ("v1beta", "gemini-2.0-flash-lite"),
         ("v1beta", "gemini-1.5-flash"),
-        ("v1beta", "gemini-pro"),
-        ("v1beta", "gemini-1.0-pro"),
+        ("v1beta", "gemini-1.5-flash-8b"),
     ]
     for ver, model in gemini_candidates:
         try:
@@ -217,7 +217,7 @@ def summarize(editorials, edition, start, end):
     # 2순위: Groq (Gemini 실패시 자동 전환)
     groq_key = os.environ.get("GROQ_API_KEY", "")
     if groq_key:
-        groq_models = ["llama3-70b-8192", "llama3-8b-8192", "mixtral-8x7b-32768"]
+        groq_models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it"]
         for model in groq_models:
             try:
                 url = "https://api.groq.com/openai/v1/chat/completions"
