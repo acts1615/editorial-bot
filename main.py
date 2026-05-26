@@ -132,8 +132,8 @@ def get_editorials(start: datetime, end: datetime) -> list[dict]:
                         pub_dt = datetime(*t[:6], tzinfo=timezone.utc).astimezone(KST)
                         break
 
-                # 날짜 필터 (RSS에 시각 없으면 당일 기사로 간주)
-                if pub_dt and not (start <= pub_dt <= end):
+                # 날짜 필터: 48시간 이내만 수집
+                if pub_dt and (datetime.now(KST) - pub_dt).total_seconds() / 3600 > 48:
                     continue
 
                 title  = entry.get("title", "").strip()
