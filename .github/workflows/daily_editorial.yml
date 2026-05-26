@@ -8,7 +8,7 @@ on:
 
 jobs:
   editorial-summary:
-    name: 사설 수집 → 요약 → 이메일
+    name: 사설 수집-요약-이메일
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
