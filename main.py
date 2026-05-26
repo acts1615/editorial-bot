@@ -10,7 +10,7 @@ from datetime import datetime, timezone, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-from google import genai
+import google.generativeai as genai
 import requests
 from bs4 import BeautifulSoup
 
@@ -155,7 +155,8 @@ def get_editorials():
 
 def summarize(editorials, edition, start, end):
     """Gemini AI로 요약합니다."""
-    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+    genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+    client = genai.GenerativeModel("gemini-1.5-flash")
 
     if not editorials:
         return "수집된 사설이 없습니다."
@@ -195,7 +196,7 @@ def summarize(editorials, edition, start, end):
 한국어로만, 5분 안에 읽을 수 있게 간결하게 써 주세요."""
 
     response = client.models.generate_content(
-        model="gemini-1.5-flash",
+        model="gemini-2.0-flash",
         contents=prompt
     )
     return response.text
