@@ -1,7 +1,8 @@
 """
-신문 사설 자동 요약 & 이메일 발송 봇 v3
-- google.genai (최신) 사용
-- RSS 수집 강화 + 디버그 로그
+신문 사설 자동 요약 & 이메일 발송 봇 v4
+- 네이버 뉴스 검색 API 사용 (공식 API, 차단 없음, 무료)
+- Gemini AI 요약
+- 아침/저녁 2회 배달
 """
 
 import os, re, smtplib
@@ -10,7 +11,6 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 from google import genai
-import feedparser
 import requests
 from bs4 import BeautifulSoup
 
@@ -28,38 +28,32 @@ def get_time_window():
         edition = "🌆 저녁판"
     return start, end, edition
 
-RSS_FEEDS = {
-    "조선일보": "https://www.chosun.com/arc/outboundfeeds/rss/category/opinion/editorial/",
-    "동아일보": "https://rss.donga.com/editorial.xml",
-    "한겨레":   "https://www.hani.co.kr/rss/opinion/editorial/",
-    "경향신문": "https://www.khan.co.kr/rss/rssdata/opinion_editorial.xml",
-    "중앙일보": "https://rss.joins.com/joins_news_list.xml",
-}
+# 검색할 신문사 목록
+PAPERS = ["조선일보", "동아일보", "한겨레", "경향신문", "중앙일보"]
 
-HEADERS = {
+HEADERS_WEB = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
-    "Accept": "application/rss+xml, application/xml, text/xml, */*",
-    "Accept-Language": "ko-KR,ko;q=0.9",
 }
 
 PAPER_CONFIG = {
     "조선일보": {"body": [".article-body"], "author": [".article__author-name"]},
     "동아일보": {"body": [".article_txt"],  "author": [".reporter_name"]},
-    "한겨레":   {"body": [".article-text"], "author": [".byline strong"]},
+    "한겨레":   {"body": [".article-text", ".text"], "author": [".byline strong"]},
     "경향신문": {"body": [".art_body"],     "author": [".reporter_area .name"]},
     "중앙일보": {"body": [".article_body"], "author": [".byline__name"]},
 }
-DEFAULT_BODY   = ["article", ".article", ".news_body", "#articleBody", "main"]
-DEFAULT_AUTHOR = [".author", ".byline", ".reporter"]
+DEFAULT_BODY   = ["article", ".article", ".news_body", "#articleBody", "main", ".content"]
+DEFAULT_AUTHOR = [".author", ".byline", ".reporter", "[rel='author']"]
 
 
 def scrape_article(url, paper):
+    """기사 URL에서 본문과 작성자를 추출합니다."""
     result = {"content": "", "author": ""}
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
+        resp = requests.get(url, headers=HEADERS_WEB, timeout=15)
         resp.encoding = resp.apparent_encoding
         soup = BeautifulSoup(resp.text, "lxml")
-        cfg = PAPER_CONFIG.get(paper, {})
+        cfg  = PAPER_CONFIG.get(paper, {})
 
         for sel in cfg.get("body", []) + DEFAULT_BODY:
             tag = soup.select_one(sel)
@@ -77,68 +71,90 @@ def scrape_article(url, paper):
                     result["author"] = author
                     break
     except Exception as e:
-        print(f"    크롤링 실패: {e}")
+        print(f"    본문 크롤링 실패: {e}")
     return result
 
 
-def get_editorials():
-    editorials = []
+def search_naver_editorial(paper):
+    """네이버 뉴스 API로 신문사 사설을 검색합니다."""
+    client_id     = os.environ["NAVER_CLIENT_ID"]
+    client_secret = os.environ["NAVER_CLIENT_SECRET"]
 
-    for paper, feed_url in RSS_FEEDS.items():
-        print(f"  [{paper}] RSS 요청 중... {feed_url}")
-        try:
-            # feedparser 대신 requests로 직접 가져오기 (차단 우회)
-            resp = requests.get(feed_url, headers=HEADERS, timeout=15)
-            print(f"    HTTP 상태: {resp.status_code}")
-            feed = feedparser.parse(resp.content)
-            print(f"    RSS 항목 수: {len(feed.entries)}개")
+    query = f"{paper} 사설"
+    url   = "https://openapi.naver.com/v1/search/news.json"
+    params = {
+        "query":  query,
+        "display": 5,
+        "sort":   "date",
+    }
+    headers = {
+        "X-Naver-Client-Id":     client_id,
+        "X-Naver-Client-Secret": client_secret,
+    }
 
-            if not feed.entries:
-                print(f"    ⚠️ RSS 항목 없음")
+    try:
+        resp = requests.get(url, headers=headers, params=params, timeout=10)
+        print(f"    네이버 API 상태: {resp.status_code}")
+        data  = resp.json()
+        items = data.get("items", [])
+        print(f"    검색 결과: {len(items)}개")
+
+        for item in items:
+            title = re.sub(r"<[^>]+>", "", item.get("title", "")).strip()
+            link  = item.get("originallink") or item.get("link", "")
+            pub   = item.get("pubDate", "")
+
+            # 사설 여부 확인 (제목에 [사설] 포함)
+            if "[사설]" not in title and "사설" not in title[:10]:
                 continue
 
-            entry = feed.entries[0]  # 가장 최신 사설 1개
-            title = entry.get("title", "").strip()
-            link  = entry.get("link", "")
+            # 발행 시각 파싱
+            try:
+                pub_dt  = datetime.strptime(pub, "%a, %d %b %Y %H:%M:%S %z").astimezone(KST)
+                pub_str = pub_dt.strftime("%Y-%m-%d %H:%M")
+            except:
+                pub_str = pub[:16] if pub else "시각 미상"
 
-            pub_dt  = None
-            pub_str = "시각 미상"
-            for attr in ("published_parsed", "updated_parsed"):
-                if getattr(entry, attr, None):
-                    t = getattr(entry, attr)
-                    pub_dt  = datetime(*t[:6], tzinfo=timezone.utc).astimezone(KST)
-                    pub_str = pub_dt.strftime("%Y-%m-%d %H:%M")
-                    break
-
-            print(f"    최신 항목: [{pub_str}] {title[:40]}")
-
-            rss_summary = re.sub(r"<[^>]+>", "", entry.get("summary", "") or "").strip()
-            rss_author  = entry.get("author", "").strip()
-
+            # 본문 크롤링
             scraped = scrape_article(link, paper) if link else {}
-            content = scraped.get("content") or rss_summary
-            author  = scraped.get("author") or rss_author or "논설위원실"
+            content = scraped.get("content", "")
+            author  = scraped.get("author", "") or "논설위원실"
+
+            # 본문이 너무 짧으면 네이버 요약문 사용
+            if len(content) < 100:
+                content = re.sub(r"<[^>]+>", "", item.get("description", "")).strip()
 
             if title and content:
-                editorials.append({
+                print(f"    ✓ [{pub_str}] {title[:40]}")
+                return {
                     "paper":   paper,
                     "title":   title,
                     "author":  author,
                     "pub":     pub_str,
                     "content": content,
                     "url":     link,
-                })
-                print(f"    ✓ 수집 완료")
-            else:
-                print(f"    ⚠️ 제목 또는 본문 없음 (title={bool(title)}, content={len(content)}자)")
+                }
 
-        except Exception as e:
-            print(f"  [{paper}] 오류: {e}")
+        print(f"    ⚠️ 사설 없음")
+    except Exception as e:
+        print(f"    오류: {e}")
 
+    return None
+
+
+def get_editorials():
+    """전체 신문사 사설을 수집합니다."""
+    editorials = []
+    for paper in PAPERS:
+        print(f"  [{paper}] 검색 중...")
+        result = search_naver_editorial(paper)
+        if result:
+            editorials.append(result)
     return editorials
 
 
 def summarize(editorials, edition, start, end):
+    """Gemini AI로 요약합니다."""
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
     if not editorials:
@@ -278,11 +294,11 @@ if __name__ == "__main__":
     start, end, edition = get_time_window()
     print(f"📅 수집 범위: {start.strftime('%m/%d %H:%M')} ~ {end.strftime('%m/%d %H:%M')} ({edition})\n")
 
-    print("① 사설 수집 중...")
+    print("① 사설 수집 중 (네이버 뉴스 API)...")
     editorials = get_editorials()
     print(f"\n   → 총 {len(editorials)}개 수집 완료\n")
 
-    print("② AI 요약 중...")
+    print("② Gemini AI 요약 중...")
     summary = summarize(editorials, edition, start, end)
     print("   → 완료\n")
 
