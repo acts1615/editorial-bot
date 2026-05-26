@@ -9,7 +9,7 @@ from datetime import datetime, timezone, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-import anthropic
+import google.generativeai as genai
 import feedparser
 import requests
 from bs4 import BeautifulSoup
@@ -168,9 +168,10 @@ def get_editorials(start: datetime, end: datetime) -> list[dict]:
 
 
 # ── 3. Claude AI 요약 ─────────────────────────────────────────
-def summarize_with_claude(editorials: list[dict], edition: str, start: datetime, end: datetime) -> str:
-    """Claude API로 사설을 주제별 분류 및 요약합니다."""
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+def summarize_with_gemini(editorials: list[dict], edition: str, start: datetime, end: datetime) -> str:
+    """Gemini API로 사설을 주제별 분류 및 요약합니다. (완전 무료)"""
+    genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+    model = genai.GenerativeModel("gemini-2.0-flash")
 
     if not editorials:
         return "수집된 사설이 없습니다."
@@ -213,12 +214,8 @@ def summarize_with_claude(editorials: list[dict], edition: str, start: datetime,
 
 한국어로만 작성하고, 5분 안에 읽을 수 있게 간결하게 써 주세요."""
 
-    msg = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=2048,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return msg.content[0].text
+    response = model.generate_content(prompt)
+    return response.text
 
 
 # ── 4. HTML 이메일 생성 ───────────────────────────────────────
@@ -350,7 +347,7 @@ if __name__ == "__main__":
     print(f"   → {len(editorials)}개 수집 완료\n")
 
     print("② Claude로 요약 중...")
-    summary = summarize_with_claude(editorials, edition, start, end)
+    summary = summarize_with_gemini(editorials, edition, start, end)
     print("   → 완료\n")
 
     print("③ 이메일 생성 및 발송 중...")
