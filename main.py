@@ -215,7 +215,7 @@ def build_email(editorials, summary, edition, start, end):
         "Thu","목").replace("Fri","금").replace("Sat","토").replace("Sun","일")
     md  = datetime.now(KST).strftime("%m/%d")
     판   = "오전판" if datetime.now(KST).hour < 12 else "저녁판"
-    subject = f"📰 잡다한 사설 | {md} ({dow}) {판}"
+    subject = f"📰 사설브리핑 | {md} ({dow}) {판}"
 
     summary_html = summary.replace("\n", "<br>")
 
@@ -274,21 +274,30 @@ def build_email(editorials, summary, edition, start, end):
 
 
 def send_gmail(subject, html, plain):
-    sender    = os.environ["SENDER_EMAIL"]
-    password  = os.environ["GMAIL_APP_PASSWORD"]
-    recipient = os.environ["RECIPIENT_EMAIL"]
+    sender   = os.environ["SENDER_EMAIL"]
+    password = os.environ["GMAIL_APP_PASSWORD"]
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"]    = sender
-    msg["To"]      = recipient
-    msg.attach(MIMEText(plain, "plain", "utf-8"))
-    msg.attach(MIMEText(html,  "html",  "utf-8"))
+    # 수신자 목록 (RECIPIENT_EMAIL ~ RECIPIENT_EMAIL6)
+    recipients = []
+    for key in ["RECIPIENT_EMAIL", "RECIPIENT_EMAIL2", "RECIPIENT_EMAIL3",
+                "RECIPIENT_EMAIL4", "RECIPIENT_EMAIL5", "RECIPIENT_EMAIL6"]:
+        email = os.environ.get(key, "").strip()
+        if email:
+            recipients.append(email)
+
+    print(f"   수신자 {len(recipients)}명: {chr(44).join(recipients)}")
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(sender, password)
-        server.sendmail(sender, recipient, msg.as_string())
-    print(f"✅ 발송 완료 → {recipient}")
+        for recipient in recipients:
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"]    = sender
+            msg["To"]      = recipient
+            msg.attach(MIMEText(plain, "plain", "utf-8"))
+            msg.attach(MIMEText(html,  "html",  "utf-8"))
+            server.sendmail(sender, recipient, msg.as_string())
+            print(f"✅ 발송 완료 → {recipient}")
 
 
 if __name__ == "__main__":
