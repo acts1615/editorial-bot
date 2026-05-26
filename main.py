@@ -194,14 +194,13 @@ def summarize(editorials, edition, start, end):
 한국어로만, 5분 안에 읽을 수 있게 간결하게 써 주세요."""
 
     # Gemini REST API 직접 호출
-  candidates = [
-    ("v1beta", "gemini-1.5-flash-latest"),  # ← 1순위
-    ("v1beta", "gemini-1.5-flash"),          # ← 2순위
-    ("v1beta", "gemini-pro"),                # ← 3순위
-    ("v1beta", "gemini-1.0-pro"),            # ← 4순위
-    ("v1",    "gemini-1.5-flash"),           # ← 5순위
-    ("v1",    "gemini-pro"),                 # ← 6순위
-]
+    candidates = [
+        ("v1beta", "gemini-1.5-flash-latest"),
+        ("v1beta", "gemini-1.5-flash"),
+        ("v1beta", "gemini-pro"),
+        ("v1beta", "gemini-1.0-pro"),
+        ("v1",    "gemini-1.5-flash"),
+        ("v1",    "gemini-pro"),
     ]
     for ver, model in candidates:
         try:
