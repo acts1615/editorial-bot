@@ -10,7 +10,6 @@ from datetime import datetime, timezone, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-import google.generativeai as genai
 import requests
 from bs4 import BeautifulSoup
 
@@ -155,11 +154,10 @@ def get_editorials():
 
 def summarize(editorials, edition, start, end):
     """Gemini AI로 요약합니다."""
-    genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-    client = genai.GenerativeModel("gemini-1.5-flash")
-
     if not editorials:
         return "수집된 사설이 없습니다."
+    
+    api_key = os.environ["GEMINI_API_KEY"]
 
     period = f"{start.strftime('%m/%d %H:%M')} ~ {end.strftime('%m/%d %H:%M')}"
     corpus = ""
@@ -195,8 +193,18 @@ def summarize(editorials, edition, start, end):
 
 한국어로만, 5분 안에 읽을 수 있게 간결하게 써 주세요."""
 
-    response = client.generate_content(prompt)
-    return response.text
+    # Gemini REST API 직접 호출 (라이브러리 버전 무관)
+    for model in ["gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-1.5-pro-latest"]:
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+            payload = {"contents": [{"parts": [{"text": prompt}]}]}
+            resp = requests.post(url, json=payload, timeout=60)
+            print(f"    Gemini {model}: {resp.status_code}")
+            if resp.status_code == 200:
+                return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+        except Exception as e:
+            print(f"    {model} 오류: {e}")
+    return "AI 요약 실패 - 원문을 직접 확인해 주세요."
 
 
 def build_email(editorials, summary, edition, start, end):
