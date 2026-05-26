@@ -1,4 +1,4 @@
-name: 📰 신문 사설 브리핑
+name: 잡다한 사설
 
 on:
   schedule:
@@ -11,21 +11,14 @@ jobs:
     name: 사설 수집 → 요약 → 이메일
     runs-on: ubuntu-latest
     timeout-minutes: 15
-
     steps:
-      - name: 📂 코드 체크아웃
-        uses: actions/checkout@v4
-
-      - name: 🐍 Python 3.11 설정
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
-
-      - name: 📦 패키지 설치
-        run: pip install -r requirements.txt
-
-      - name: 🚀 사설 브리핑 실행
+      - run: pip install -r requirements.txt
+      - name: 실행
         env:
           NAVER_CLIENT_ID:     ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
