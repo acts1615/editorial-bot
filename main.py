@@ -470,41 +470,71 @@ def build_email(editorials, sisain, security_news, summary, edition, start, end)
   </div>
 </div>"""
 
-    # 북한/전쟁 뉴스 섹션
+    # 북한/전쟁 뉴스 섹션 - 리더 모드
     security_html = ""
     if security_news:
         news_items_html = ""
         for news in security_news:
+            # 전문 스크래핑
+            scraped = scrape_article(news["url"], "")
+            full_content = scraped.get("content") or news.get("desc", "")
+            news_paras = "".join(
+                f"<p style='margin:0 0 16px;font-size:15px;line-height:1.9;color:#1a1a1a;text-indent:1em;'>{p}</p>"
+                for p in full_content.split("\n") if p.strip() and len(p.strip()) > 10
+            ) or f"<p style='font-size:15px;color:#555;'>{news.get('desc','')}</p>"
+
+            cat = news.get("category", "안보/전쟁")
+            cat_color = "#c62828" if "북한" in cat else "#e65100" if "전쟁" in cat else "#1565c0"
+
             news_items_html += f"""
-<div style="border-left:3px solid #c62828;padding:10px 14px;margin-bottom:12px;background:#fff8f8;">
-  <div style="font-size:13px;color:#c62828;margin-bottom:4px;">{news['category']} · {news['pub']}</div>
-  <a href="{news['url']}" style="font-size:15px;font-weight:bold;color:#1a1a1a;text-decoration:none;">
-    {news['title']}
-  </a>
-  <p style="margin:6px 0 0;font-size:13px;color:#555;line-height:1.6;">{news['desc']}</p>
-  <a href="{news['url']}" style="font-size:12px;color:#c62828;">🔗 원문 보기</a>
+<div style="margin-bottom:32px;border-radius:12px;overflow:hidden;
+            box-shadow:0 2px 12px rgba(0,0,0,0.08);">
+  <div style="background:{cat_color};padding:14px 20px;">
+    <div style="color:rgba(255,255,255,0.8);font-size:12px;margin-bottom:6px;">
+      {cat} · {news['pub']}
+    </div>
+    <h3 style="margin:0;font-size:16px;color:#fff;line-height:1.4;">{news['title']}</h3>
+  </div>
+  <div style="background:#fffef9;padding:20px 24px;">
+    {news_paras}
+    <div style="border-top:1px solid #eee;padding-top:10px;margin-top:4px;">
+      <a href="{news['url']}" style="font-size:13px;color:#888;text-decoration:none;">
+        🔗 광고 없이 원문 보기
+      </a>
+    </div>
+  </div>
 </div>"""
+
         security_html = f"""
 <h2 style="font-size:18px;color:#c62828;border-bottom:2px solid #c62828;
            padding-bottom:8px;margin:32px 0 20px;">🚨 북한/전쟁 주요 소식</h2>
-<div style="margin-bottom:24px;">{news_items_html}</div>"""
+{news_items_html}"""
 
     sisain_html = ""
     if sisain:
         sisain_paras = "".join(
-            f"<p style='margin:0 0 10px;'>{p}</p>"
-            for p in sisain["content"].split("\n") if p.strip()
+            f"<p style='margin:0 0 16px;font-size:15px;line-height:1.9;color:#1a1a1a;text-indent:1em;'>{p}</p>"
+            for p in sisain["content"].split("\n") if p.strip() and len(p.strip()) > 10
         )
         sisain_html = f"""
 <h2 style="font-size:18px;color:#2d6a2d;border-bottom:2px solid #2d6a2d;
            padding-bottom:8px;margin:32px 0 20px;">📚 시사인 — 새로 나온 책</h2>
-<div style="border:1px solid #c8e6c9;border-radius:8px;padding:20px;
-            margin-bottom:24px;background:#f9fbe7;">
-  <h3 style="margin:0 0 8px;font-size:16px;color:#1a1a1a;">{sisain['title']}</h3>
-  <a href="{sisain['url']}" style="display:inline-block;margin-bottom:14px;
-     font-size:13px;color:#2d6a2d;">🔗 원문 보기</a>
-  <div style="font-size:15px;line-height:1.85;color:#333;
-              border-top:1px solid #c8e6c9;padding-top:14px;">{sisain_paras}</div>
+<div style="margin-bottom:32px;border-radius:12px;overflow:hidden;
+            box-shadow:0 2px 12px rgba(0,0,0,0.08);">
+  <div style="background:#2d6a2d;padding:14px 20px;">
+    <div style="color:rgba(255,255,255,0.8);font-size:12px;margin-bottom:6px;">
+      시사인 · {sisain['pub']}
+    </div>
+    <h3 style="margin:0;font-size:16px;color:#fff;line-height:1.4;">{sisain['title']}</h3>
+  </div>
+  <div style="background:#fffef9;padding:20px 24px;">
+    {sisain_paras}
+    <div style="border-top:1px solid #eee;padding-top:10px;margin-top:4px;">
+      <a href="{sisain['url']}" style="font-size:13px;color:#888;text-decoration:none;">
+        🔗 광고 없이 원문 보기
+      </a>
+    </div>
+  </div>
 </div>"""
 
     html = f"""<!DOCTYPE html><html lang="ko">
