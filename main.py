@@ -116,18 +116,17 @@ def search_naver_editorial(paper):
             allowed = PAPER_DOMAINS.get(paper, [])
             is_official = allowed and any(domain in link for domain in allowed)
 
-            # 사설 여부 확인
-            has_editorial = (
-                title.startswith("[사설]") or
-                "사설" in title[:6] or
-                (is_official and "사설" in title)
-            )
-            if not has_editorial:
+            # 사설 여부 확인 - 반드시 [사설]로 시작해야 함
+            if not title.startswith("[사설]"):
                 continue
 
             try:
                 pub_dt  = datetime.strptime(pub, "%a, %d %b %Y %H:%M:%S %z").astimezone(KST)
                 pub_str = pub_dt.strftime("%Y-%m-%d %H:%M")
+                # 48시간 이상 된 기사 제외
+                age_hours = (datetime.now(KST) - pub_dt).total_seconds() / 3600
+                if age_hours > 48:
+                    continue
             except:
                 pub_str = pub[:16] if pub else "시각 미상"
 
@@ -247,7 +246,8 @@ def summarize(editorials, sisain, edition, start, end):
   • 키워드: #태그 #태그 #태그
   • 원문: 원문URL
 
-한국어로만 작성하고, 사설별 요약은 반드시 300자 이상으로 작성해 주세요."""
+반드시 한국어로만 작성하세요. 한자, 일본어, 힌디어, 영어 등 다른 언어 문자를 절대 사용하지 마세요.
+사설별 요약은 반드시 300자 이상으로 작성해 주세요."""
 
     # 1순위: Gemini REST API
     gemini_candidates = [
