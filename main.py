@@ -92,7 +92,7 @@ def search_naver_editorial(paper):
     client_secret = os.environ["NAVER_CLIENT_SECRET"]
     query  = f"{paper} 사설"
     url    = "https://openapi.naver.com/v1/search/news.json"
-    params = {"query": query, "display": 10, "sort": "date"}
+    params = {"query": query, "display": 50, "sort": "date"}
     headers = {
         "X-Naver-Client-Id":     client_id,
         "X-Naver-Client-Secret": client_secret,
@@ -398,9 +398,13 @@ def get_subscribers():
         try:
             resp = requests.get(f"{script_url}?action=list", timeout=15)
             if resp.status_code == 200:
-                data = resp.json()
-                subscribers = [item["email"] for item in data if item.get("email")]
-                print(f"   구글 시트 구독자: {len(subscribers)}명")
+                text = resp.text.strip()
+                if text and text.startswith("["):
+                    data = resp.json()
+                    subscribers = [item["email"] for item in data if item.get("email")]
+                    print(f"   구글 시트 구독자: {len(subscribers)}명")
+                else:
+                    print(f"   구글 시트 응답 비어있음 (무시)")
         except Exception as e:
             print(f"   구글 시트 오류: {e}")
 
