@@ -31,10 +31,8 @@ def get_time_window():
         edition = "🌆 저녁판"
     return start, end, edition
 
-# 한겨레 맨 앞 배치
 PAPERS = ["한겨레", "조선일보", "동아일보", "경향신문", "중앙일보"]
 
-# 신문사별 공식 도메인
 PAPER_DOMAINS = {
     "한겨레":   ["hani.co.kr"],
     "조선일보": ["chosun.com"],
@@ -43,7 +41,6 @@ PAPER_DOMAINS = {
     "중앙일보": ["joongang.co.kr", "joins.com"],
 }
 
-# 차단할 도메인 (사설 요약 사이트)
 BLOCKED_DOMAINS = ["nongaek.com", "newsis.com", "news1.kr", "yna.co.kr", "pressian.com"]
 
 HEADERS_WEB = {
@@ -108,8 +105,8 @@ def search_naver_editorial(paper):
             link  = item.get("originallink") or item.get("link", "")
             pub   = item.get("pubDate", "")
 
-            # 사설 여부 확인
-            if "[사설]" not in title and "사설" not in title[:10]:
+            # 사설 여부 확인 (제목 앞부분에 [사설] 또는 사설로 시작)
+            if not title.startswith("[사설]") and "사설" not in title[:4]:
                 continue
 
             # 차단 도메인 필터
@@ -155,7 +152,6 @@ def get_editorials():
 
 
 def get_sisain_books():
-    """시사인 새로 나온 책 코너 - 네이버 뉴스 API로 주간 최신 기사 수집"""
     client_id     = os.environ["NAVER_CLIENT_ID"]
     client_secret = os.environ["NAVER_CLIENT_SECRET"]
     print("  [시사인] 새로 나온 책 검색 중...")
@@ -259,7 +255,7 @@ def summarize(editorials, sisain, edition, start, end):
         except Exception as e:
             print(f"    Gemini 예외: {e}")
 
-    # 2순위: Groq (Gemini 실패시 자동 전환)
+    # 2순위: Groq
     groq_key = os.environ.get("GROQ_API_KEY", "")
     if groq_key:
         groq_models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it"]
@@ -275,162 +271,4 @@ def summarize(editorials, sisain, edition, start, end):
                 else:
                     err = resp.json().get("error", {}).get("message", "")[:80]
                     print(f"    오류: {err}")
-            except Exception as e:
-                print(f"    Groq 예외: {e}")
-    else:
-        print("    Groq 키 없음 - GROQ_API_KEY Secret 확인 필요")
-
-    return "AI 요약 실패 - 원문을 직접 확인해 주세요."
-
-
-def build_email(editorials, sisain, summary, edition, start, end):
-    period   = f"{start.strftime('%m/%d %H:%M')} ~ {end.strftime('%m/%d %H:%M')}"
-    date_str = datetime.now(KST).strftime("%Y년 %m월 %d일")
-    dow = datetime.now(KST).strftime("%a").replace(
-        "Mon","월").replace("Tue","화").replace("Wed","수").replace(
-        "Thu","목").replace("Fri","금").replace("Sat","토").replace("Sun","일")
-    md  = datetime.now(KST).strftime("%m/%d")
-    판   = "오전판" if datetime.now(KST).hour < 12 else "저녁판"
-    subject = f"📰 잡다한 사설들 | {md} ({dow}) {판}"
-
-    summary_html = summary.replace("\n", "<br>")
-
-    cards = ""
-    for ed in editorials:
-        paras = "".join(
-            f"<p style='margin:0 0 10px;'>{p}</p>"
-            for p in ed["content"].split("\n") if p.strip()
-        )
-        cards += f"""
-<div style="border:1px solid #e0e0e0;border-radius:8px;padding:20px;
-            margin-bottom:24px;background:#fafafa;">
-  <div style="margin-bottom:8px;">
-    <span style="background:#1a3a5c;color:#fff;font-size:12px;font-weight:bold;
-                 padding:3px 10px;border-radius:20px;">{ed['paper']}</span>
-    <span style="color:#888;font-size:12px;margin-left:8px;">{ed['pub']}</span>
-  </div>
-  <h3 style="margin:0 0 6px;font-size:17px;color:#1a1a1a;">{ed['title']}</h3>
-  <p style="margin:0 0 6px;color:#666;font-size:13px;">✍️ {ed['author']}</p>
-  <a href="{ed['url']}" style="display:inline-block;margin-bottom:14px;
-     font-size:13px;color:#1a6ec8;">🔗 원문 보기</a>
-  <div style="font-size:15px;line-height:1.85;color:#333;
-              border-top:1px solid #e8e8e8;padding-top:14px;">{paras}</div>
-</div>"""
-
-    sisain_html = ""
-    if sisain:
-        sisain_paras = "".join(
-            f"<p style='margin:0 0 10px;'>{p}</p>"
-            for p in sisain["content"].split("\n") if p.strip()
-        )
-        sisain_html = f"""
-<h2 style="font-size:18px;color:#2d6a2d;border-bottom:2px solid #2d6a2d;
-           padding-bottom:8px;margin:32px 0 20px;">📚 시사인 — 새로 나온 책</h2>
-<div style="border:1px solid #c8e6c9;border-radius:8px;padding:20px;
-            margin-bottom:24px;background:#f9fbe7;">
-  <h3 style="margin:0 0 8px;font-size:16px;color:#1a1a1a;">{sisain['title']}</h3>
-  <a href="{sisain['url']}" style="display:inline-block;margin-bottom:14px;
-     font-size:13px;color:#2d6a2d;">🔗 원문 보기</a>
-  <div style="font-size:15px;line-height:1.85;color:#333;
-              border-top:1px solid #c8e6c9;padding-top:14px;">{sisain_paras}</div>
-</div>"""
-
-    html = f"""<!DOCTYPE html><html lang="ko">
-<head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="font-family:'Malgun Gothic',sans-serif;max-width:700px;
-             margin:0 auto;padding:20px;background:#fff;color:#222;">
-  <div style="background:#1a3a5c;color:#fff;padding:20px 24px;
-              border-radius:8px;margin-bottom:28px;">
-    <div style="font-size:13px;opacity:.8;">{period}</div>
-    <h1 style="margin:6px 0 0;font-size:22px;">📰 잡다한 사설들</h1>
-    <div style="margin-top:6px;font-size:14px;opacity:.9;">{edition} · {date_str}</div>
-  </div>
-  <div style="background:#f0f4f8;border-left:4px solid #1a3a5c;
-              padding:20px;border-radius:4px;margin-bottom:32px;">
-    <h2 style="margin:0 0 14px;font-size:16px;color:#1a3a5c;">🤖 AI 요약 브리핑</h2>
-    <div style="line-height:1.85;font-size:14px;">{summary_html}</div>
-  </div>
-  {sisain_html}
-  <h2 style="font-size:18px;color:#1a3a5c;border-bottom:2px solid #1a3a5c;
-             padding-bottom:8px;margin-bottom:20px;">📄 사설 원문</h2>
-  {cards}
-  <hr style="border:none;border-top:1px solid #eee;margin:32px 0 16px;">
-  <p style="color:#bbb;font-size:11px;text-align:center;">
-    GitHub Actions + Gemini/Groq AI 자동 생성 | {datetime.now(KST).strftime('%Y-%m-%d %H:%M KST')}
-  </p>
-</body></html>"""
-
-    plain = f"[{edition}] {date_str} 사설 브리핑\n\n{summary}\n\n"
-    if sisain:
-        plain += f"\n📚 시사인 새로 나온 책\n{sisain['title']}\n{sisain['url']}\n\n{sisain['content']}\n\n{'─'*40}\n"
-    for ed in editorials:
-        plain += f"\n■ [{ed['paper']}] {ed['title']}\n작성자: {ed['author']}\n{ed['url']}\n\n{ed['content']}\n\n{'─'*40}\n"
-
-    return subject, html, plain
-
-
-def get_subscribers():
-    script_url = os.environ.get("APPS_SCRIPT_URL", "")
-    subscribers = []
-    if script_url:
-        try:
-            resp = requests.get(f"{script_url}?action=list", timeout=15)
-            if resp.status_code == 200:
-                data = resp.json()
-                subscribers = [item["email"] for item in data if item.get("email")]
-                print(f"   구글 시트 구독자: {len(subscribers)}명")
-        except Exception as e:
-            print(f"   구글 시트 오류: {e}")
-
-    keys = ["RECIPIENT_EMAIL"] + [f"RECIPIENT_EMAIL{i}" for i in range(2, 11)]
-    for key in keys:
-        email = os.environ.get(key, "").strip()
-        if email and email not in subscribers:
-            subscribers.append(email)
-    return subscribers
-
-
-def send_gmail(subject, html, plain):
-    sender    = os.environ["SENDER_EMAIL"]
-    password  = os.environ["GMAIL_APP_PASSWORD"]
-    recipients = get_subscribers()
-    print(f"   총 수신자 {len(recipients)}명: {', '.join(recipients)}")
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-        server.login(sender, password)
-        for recipient in recipients:
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = subject
-            msg["From"]    = sender
-            msg["To"]      = recipient
-            msg.attach(MIMEText(plain, "plain", "utf-8"))
-            msg.attach(MIMEText(html,  "html",  "utf-8"))
-            server.sendmail(sender, recipient, msg.as_string())
-            print(f"✅ 발송 완료 → {recipient}")
-
-
-if __name__ == "__main__":
-    now = datetime.now(KST)
-    print(f"\n{'='*55}")
-    print(f"📰 신문 사설 봇 시작: {now.strftime('%Y-%m-%d %H:%M KST')}")
-    print(f"{'='*55}\n")
-
-    start, end, edition = get_time_window()
-    print(f"📅 수집 범위: {start.strftime('%m/%d %H:%M')} ~ {end.strftime('%m/%d %H:%M')} ({edition})\n")
-
-    print("① 사설 수집 중 (네이버 뉴스 API)...")
-    editorials = get_editorials()
-    print(f"\n   → 총 {len(editorials)}개 수집 완료\n")
-
-    print("② 시사인 새로 나온 책 수집 중...")
-    sisain = get_sisain_books()
-    print(f"   → {'수집 완료' if sisain else '없음'}\n")
-
-    print("③ AI 요약 중...")
-    summary = summarize(editorials, sisain, edition, start, end)
-    print("   → 완료\n")
-
-    print("④ 이메일 발송 중...")
-    subject, html, plain = build_email(editorials, sisain, summary, edition, start, end)
-    send_gmail(subject, html, plain)
-    print("\n🎉 완료!")
+            except E
