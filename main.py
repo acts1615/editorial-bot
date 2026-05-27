@@ -219,26 +219,27 @@ def get_sisain_books():
 
 
 def get_security_news():
-    """북한/전쟁 관련 최신 뉴스 수집"""
+    """안보/전쟁/분쟁/경제안보 뉴스 - 포괄 키워드 수집 후 AI 선별"""
     client_id     = os.environ["NAVER_CLIENT_ID"]
     client_secret = os.environ["NAVER_CLIENT_SECRET"]
-    print("  [북한/전쟁] 뉴스 검색 중...")
+    print("  [안보/전쟁/경제] 뉴스 수집 중...")
 
-    keywords = ["북한 미사일", "북한 도발", "북한 핵", "우크라이나 전쟁", "가자지구", "중동 전쟁"]
-    headers = {
+    # 포괄적 키워드로 넓게 수집
+    keywords = ["전쟁", "분쟁 교전", "북한", "원유 에너지 안보", "해협", "핵 미사일"]
+    naver_headers = {
         "X-Naver-Client-Id":     client_id,
         "X-Naver-Client-Secret": client_secret,
     }
 
-    news_list = []
+    raw_news = []
     seen_titles = set()
 
     for keyword in keywords:
         try:
             resp = requests.get(
                 "https://openapi.naver.com/v1/search/news.json",
-                headers=headers,
-                params={"query": keyword, "display": 3, "sort": "date"},
+                headers=naver_headers,
+                params={"query": keyword, "display": 5, "sort": "date"},
                 timeout=10
             )
             items = resp.json().get("items", [])
@@ -254,31 +255,84 @@ def get_security_news():
                 try:
                     pub_dt = datetime.strptime(pub, "%a, %d %b %Y %H:%M:%S %z").astimezone(KST)
                     age_hours = (datetime.now(KST) - pub_dt).total_seconds() / 3600
-                    if age_hours > 24:
+                    if age_hours > 48:
                         continue
                     pub_str = pub_dt.strftime("%m/%d %H:%M")
                 except:
                     pub_str = ""
 
                 seen_titles.add(title)
-                news_list.append({
-                    "title":   title,
-                    "desc":    desc,
-                    "url":     link,
-                    "pub":     pub_str,
-                    "keyword": keyword,
+                raw_news.append({
+                    "title": title,
+                    "desc":  desc,
+                    "url":   link,
+                    "pub":   pub_str,
                 })
-
-                if len(news_list) >= 6:
-                    break
         except Exception as e:
             print(f"    오류 ({keyword}): {e}")
 
-        if len(news_list) >= 6:
-            break
+    print(f"    → 원시 {len(raw_news)}개 수집, AI 선별 중...")
 
-    print(f"    → {len(news_list)}개 수집")
-    return news_list
+    if not raw_news:
+        return []
+
+    # AI로 중요 뉴스 선별 및 카테고리 분류
+    import json
+    news_text = "\n".join([
+        f"{i+1}. [{n['pub']}] {n['title']} / {n['desc'][:80]} / {n['url']}"
+        for i, n in enumerate(raw_news)
+    ])
+
+    prompt = f"""다음 뉴스 목록에서 안보/전쟁/경제안보 관련 중요 뉴스 최대 6개를 선별하세요.
+
+{news_text}
+
+선별 기준:
+- 북한 (미사일, 핵, 도발, 군사 동향)
+- 전쟁/분쟁 (우크라이나, 중동, 가자지구, 이란, 대만, 남중국해 등 어떤 지역이든)
+- 경제안보 (호르무즈, 원유, 에너지, 반도체 수출규제, 미중 무역전쟁)
+
+위 기준에 해당하는 것만 선별하고 JSON 배열로만 응답하세요 (다른 텍스트 없이):
+[{{"title":"제목","desc":"한줄요약50자이내","url":"URL","pub":"시각","category":"북한 또는 전쟁분쟁 또는 경제안보"}}]
+해당 없으면: []"""
+
+    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+    groq_key   = os.environ.get("GROQ_API_KEY", "")
+
+    # Gemini 시도
+    for ver, model in [("v1beta", "gemini-2.0-flash"), ("v1beta", "gemini-2.0-flash-lite")]:
+        try:
+            url = f"https://generativelanguage.googleapis.com/{ver}/models/{model}:generateContent?key={gemini_key}"
+            resp = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=30)
+            if resp.status_code == 200:
+                text = resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+                text = re.sub(r"```json|```", "", text).strip()
+                result = json.loads(text)
+                print(f"    → AI 선별 완료 (Gemini): {len(result)}개")
+                return result
+        except Exception:
+            pass
+
+    # Groq 시도
+    if groq_key:
+        for model in ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]:
+            try:
+                url = "https://api.groq.com/openai/v1/chat/completions"
+                headers = {"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"}
+                payload = {"model": model, "messages": [{"role": "user", "content": prompt}], "max_tokens": 1000}
+                resp = requests.post(url, headers=headers, json=payload, timeout=30)
+                if resp.status_code == 200:
+                    text = resp.json()["choices"][0]["message"]["content"].strip()
+                    text = re.sub(r"```json|```", "", text).strip()
+                    result = json.loads(text)
+                    print(f"    → AI 선별 완료 (Groq): {len(result)}개")
+                    return result
+            except Exception:
+                pass
+
+    # AI 실패시 원본 그대로 (최대 6개)
+    print("    → AI 선별 실패, 원본 반환")
+    return [{**n, "category": "안보/전쟁"} for n in raw_news[:6]]
 
 
 def summarize(editorials, sisain, edition, start, end):
@@ -411,7 +465,7 @@ def build_email(editorials, sisain, security_news, summary, edition, start, end)
         for news in security_news:
             news_items_html += f"""
 <div style="border-left:3px solid #c62828;padding:10px 14px;margin-bottom:12px;background:#fff8f8;">
-  <div style="font-size:13px;color:#c62828;margin-bottom:4px;">{news['keyword']} · {news['pub']}</div>
+  <div style="font-size:13px;color:#c62828;margin-bottom:4px;">{news['category']} · {news['pub']}</div>
   <a href="{news['url']}" style="font-size:15px;font-weight:bold;color:#1a1a1a;text-decoration:none;">
     {news['title']}
   </a>
