@@ -91,12 +91,14 @@
 
   <div id="subForm">
     <div class="form-group">
-      <label>이름</label>
-      <input type="text" id="subName" placeholder="홍길동">
+      <label>이름 <span style="color:#999;font-size:12px;">(닉네임 가능)</span></label>
+      <input type="text" id="subName" placeholder="홍길동 또는 닉네임">
     </div>
     <div class="form-group">
-      <label>이메일 주소</label>
-      <input type="email" id="subEmail" placeholder="example@gmail.com">
+      <label>이메일 주소 <span style="color:#c62828;font-size:12px;">* 정확하게 입력해 주세요</span></label>
+      <input type="email" id="subEmail" placeholder="example@gmail.com"
+             oninput="validateEmail(this)">
+      <div id="emailHint" style="font-size:12px;margin-top:4px;display:none;"></div>
     </div>
     <button class="btn" onclick="handleSubscribe()">구독 신청하기</button>
     <div class="msg" id="subMsg"></div>
@@ -124,6 +126,23 @@
 <script>
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxqpCs-1EQrSK_QCYcy00VQNdUM1U3CUmatLBn_iW49_55jX7ZsnncgA_rtOqURGFm89Q/exec";
 
+function validateEmail(input) {
+  const hint = document.getElementById('emailHint');
+  const val = input.value.trim();
+  if (!val) { hint.style.display = 'none'; return; }
+  const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
+  hint.style.display = 'block';
+  if (valid) {
+    hint.style.color = '#2e7d32';
+    hint.textContent = '✅ 올바른 이메일 형식입니다';
+    input.style.borderColor = '#2e7d32';
+  } else {
+    hint.style.color = '#c62828';
+    hint.textContent = '❌ 이메일 형식을 확인해 주세요 (예: abc@gmail.com)';
+    input.style.borderColor = '#c62828';
+  }
+}
+
 function showTab(tab) {
   document.querySelectorAll('.tab').forEach((t, i) => {
     t.classList.toggle('active', (i===0&&tab==='sub')||(i===1&&tab==='unsub'));
@@ -143,6 +162,9 @@ async function handleSubscribe() {
   const name  = document.getElementById('subName').value.trim();
   const email = document.getElementById('subEmail').value.trim();
   if (!email) { showMsg('subMsg', '이메일을 입력해 주세요.', 'error'); return; }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    showMsg('subMsg', '이메일 형식이 올바르지 않아요. 다시 확인해 주세요.', 'error'); return;
+  }
   const btn = document.querySelector('#subForm .btn');
   btn.disabled = true;
   btn.textContent = '처리 중...';
