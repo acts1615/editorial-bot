@@ -108,8 +108,8 @@ def search_naver_editorial(paper):
             link  = item.get("originallink") or item.get("link", "")
             pub   = item.get("pubDate", "")
 
-            # 사설 여부 확인
-            if "[사설]" not in title and "사설" not in title[:10]:
+            # 사설 여부 확인 (제목이 [사설]로 시작해야 함)
+            if not title.startswith("[사설]") and "사설" not in title[:4]:
                 continue
 
             # 차단 도메인 필터
