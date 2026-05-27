@@ -21,6 +21,7 @@ jobs:
           NAVER_CLIENT_ID:     ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
           GEMINI_API_KEY:      ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY:        ${{ secrets.GROQ_API_KEY }}
           SENDER_EMAIL:        ${{ secrets.SENDER_EMAIL }}
           GMAIL_APP_PASSWORD:  ${{ secrets.GMAIL_APP_PASSWORD }}
           RECIPIENT_EMAIL:     ${{ secrets.RECIPIENT_EMAIL }}
@@ -28,3 +29,4 @@ jobs:
           RECIPIENT_EMAIL3:    ${{ secrets.RECIPIENT_EMAIL3 }}
           RECIPIENT_EMAIL4:    ${{ secrets.RECIPIENT_EMAIL4 }}
           RECIPIENT_EMAIL5:    ${{ secrets.RECIPIENT_EMAIL5 }}
+          APPS_SCRIPT_URL:     ${{ secrets.APPS_SCRIPT_URL }}
