@@ -108,12 +108,21 @@ def search_naver_editorial(paper):
             link  = item.get("originallink") or item.get("link", "")
             pub   = item.get("pubDate", "")
 
-            # 사설 여부 확인 (제목이 [사설]로 시작해야 함)
-            if not title.startswith("[사설]") and "사설" not in title[:4]:
-                continue
-
             # 차단 도메인 필터
             if any(blocked in link for blocked in BLOCKED_DOMAINS):
+                continue
+
+            # 공식 도메인 확인
+            allowed = PAPER_DOMAINS.get(paper, [])
+            is_official = allowed and any(domain in link for domain in allowed)
+
+            # 사설 여부 확인
+            has_editorial = (
+                title.startswith("[사설]") or
+                "사설" in title[:6] or
+                (is_official and "사설" in title)
+            )
+            if not has_editorial:
                 continue
 
             try:
@@ -128,7 +137,15 @@ def search_naver_editorial(paper):
             if len(content) < 100:
                 content = re.sub(r"<[^>]+>", "", item.get("description", "")).strip()
 
-            if title and content:
+            # UI 텍스트 제거 (공유하기, SNS 버튼 등)
+            ui_noise = ["공유하기", "카카오톡으로 공유하기", "페이스북으로 공유하기",
+                        "트위터로 공유하기", "URL 복사", "창 닫기", "SNS", "퍼가기"]
+            lines = content.split("\n")
+            lines = [l for l in lines if not any(noise in l for noise in ui_noise)]
+            content = "\n".join(lines)
+            content = re.sub(r"\n{3,}", "\n\n", content).strip()
+
+            if title and content and len(content) > 50:
                 print(f"    ✓ [{pub_str}] {title[:40]}")
                 return {"paper": paper, "title": title, "author": author,
                         "pub": pub_str, "content": content, "url": link}
