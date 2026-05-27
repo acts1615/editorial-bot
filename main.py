@@ -367,6 +367,16 @@ def build_email(editorials, sisain, summary, edition, start, end):
              padding-bottom:8px;margin-bottom:20px;">📄 사설 원문</h2>
   {cards}
   <hr style="border:none;border-top:1px solid #eee;margin:32px 0 16px;">
+  <div style="text-align:center;margin-bottom:16px;">
+    <a href="https://acts1615.github.io/editorial-bot/subscribe.html"
+       style="display:inline-block;padding:10px 24px;background:#1a3a5c;color:#fff;
+               text-decoration:none;border-radius:20px;font-size:14px;">
+      📬 구독 신청 / 해지
+    </a>
+    <p style="color:#999;font-size:12px;margin-top:8px;">
+      지인에게 공유해 보세요!
+    </p>
+  </div>
   <p style="color:#bbb;font-size:11px;text-align:center;">
     GitHub Actions + Gemini/Groq AI 자동 생성 | {datetime.now(KST).strftime('%Y-%m-%d %H:%M KST')}
   </p>
