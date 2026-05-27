@@ -438,24 +438,36 @@ def build_email(editorials, sisain, security_news, summary, edition, start, end)
 
     cards = ""
     for ed in editorials:
-        paras = "".join(
-            f"<p style='margin:0 0 10px;'>{p}</p>"
-            for p in ed["content"].split("\n") if p.strip()
+        # 문단 단위로 분리하여 깔끔하게 표시
+        paragraphs = [p.strip() for p in ed["content"].split("\n") if p.strip() and len(p.strip()) > 10]
+        paras_html = "".join(
+            f"<p style='margin:0 0 16px;font-size:16px;line-height:1.9;color:#1a1a1a;"
+            f"text-indent:1em;'>{p}</p>"
+            for p in paragraphs
         )
         cards += f"""
-<div style="border:1px solid #e0e0e0;border-radius:8px;padding:20px;
-            margin-bottom:24px;background:#fafafa;">
-  <div style="margin-bottom:8px;">
-    <span style="background:#1a3a5c;color:#fff;font-size:12px;font-weight:bold;
-                 padding:3px 10px;border-radius:20px;">{ed['paper']}</span>
-    <span style="color:#888;font-size:12px;margin-left:8px;">{ed['pub']}</span>
+<div style="margin-bottom:40px;border-radius:12px;overflow:hidden;
+            box-shadow:0 2px 12px rgba(0,0,0,0.08);">
+  <!-- 헤더 -->
+  <div style="background:#1a3a5c;padding:16px 20px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+      <span style="background:rgba(255,255,255,0.2);color:#fff;font-size:12px;
+                   font-weight:bold;padding:2px 10px;border-radius:20px;">{ed['paper']}</span>
+      <span style="color:rgba(255,255,255,0.7);font-size:12px;">{ed['pub']}</span>
+    </div>
+    <h2 style="margin:0 0 6px;font-size:18px;color:#fff;line-height:1.4;
+               font-weight:bold;">{ed['title']}</h2>
+    <span style="color:rgba(255,255,255,0.7);font-size:13px;">✍️ {ed['author']}</span>
   </div>
-  <h3 style="margin:0 0 6px;font-size:17px;color:#1a1a1a;">{ed['title']}</h3>
-  <p style="margin:0 0 6px;color:#666;font-size:13px;">✍️ {ed['author']}</p>
-  <a href="{ed['url']}" style="display:inline-block;margin-bottom:14px;
-     font-size:13px;color:#1a6ec8;">🔗 원문 보기</a>
-  <div style="font-size:15px;line-height:1.85;color:#333;
-              border-top:1px solid #e8e8e8;padding-top:14px;">{paras}</div>
+  <!-- 본문 - 리더 모드 -->
+  <div style="background:#fffef9;padding:24px 28px;">
+    {paras_html}
+    <div style="border-top:1px solid #eee;padding-top:12px;margin-top:8px;">
+      <a href="{ed['url']}" style="font-size:13px;color:#888;text-decoration:none;">
+        🔗 광고 없이 원문 보기
+      </a>
+    </div>
+  </div>
 </div>"""
 
     # 북한/전쟁 뉴스 섹션
