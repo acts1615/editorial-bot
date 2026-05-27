@@ -116,11 +116,6 @@ def search_naver_editorial(paper):
             if any(blocked in link for blocked in BLOCKED_DOMAINS):
                 continue
 
-            # 신문사 공식 도메인 확인
-            allowed = PAPER_DOMAINS.get(paper, [])
-            if allowed and not any(domain in link for domain in allowed):
-                continue
-
             try:
                 pub_dt  = datetime.strptime(pub, "%a, %d %b %Y %H:%M:%S %z").astimezone(KST)
                 pub_str = pub_dt.strftime("%Y-%m-%d %H:%M")
@@ -239,11 +234,10 @@ def summarize(editorials, sisain, edition, start, end):
 
     # 1순위: Gemini REST API
     gemini_candidates = [
-        ("v1beta", "gemini-1.5-flash-latest"),
-        ("v1",     "gemini-1.5-flash"),
-        ("v1beta", "gemini-1.5-flash"),
-        ("v1",     "gemini-1.5-pro"),
-        ("v1beta", "gemini-1.5-pro-latest"),
+        ("v1beta", "gemini-2.0-flash"),
+        ("v1beta", "gemini-2.0-flash-lite"),
+        ("v1beta", "gemini-1.5-flash-8b"),
+        ("v1beta", "gemini-1.0-pro"),
     ]
     for ver, model in gemini_candidates:
         try:
