@@ -28,4 +28,3 @@ jobs:
           RECIPIENT_EMAIL3:    ${{ secrets.RECIPIENT_EMAIL3 }}
           RECIPIENT_EMAIL4:    ${{ secrets.RECIPIENT_EMAIL4 }}
           RECIPIENT_EMAIL5:    ${{ secrets.RECIPIENT_EMAIL5 }}
-          GROQ_API_KEY:        ${{ secrets.GROQ_API_KEY }}
