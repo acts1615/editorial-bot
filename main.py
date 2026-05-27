@@ -116,8 +116,21 @@ def search_naver_editorial(paper):
             allowed = PAPER_DOMAINS.get(paper, [])
             is_official = allowed and any(domain in link for domain in allowed)
 
-            # 사설 여부 확인 - 반드시 [사설]로 시작해야 함
-            if not title.startswith("[사설]"):
+            # 사설 여부 확인 - 제목 또는 URL로 판단
+            editorial_url_patterns = [
+                "/opinion/editorial", "/arti/opinion/editorial",
+                "/Opinion/article", "/news/Opinion",
+                "/opinion/column", "/editorial/"
+            ]
+            is_editorial_url = any(pat in link for pat in editorial_url_patterns)
+            is_editorial_title = title.startswith("[사설]") or title.startswith("사설")
+
+            if not is_editorial_title and not is_editorial_url:
+                continue
+
+            # 명백히 사설이 아닌 것 제외
+            not_editorial = ["[단독]", "[인터뷰]", "[기자수첩]", "학위복", "[속보]"]
+            if any(x in title for x in not_editorial):
                 continue
 
             try:
@@ -203,6 +216,69 @@ def get_sisain_books():
     except Exception as e:
         print(f"    오류: {e}")
     return None
+
+
+def get_security_news():
+    """북한/전쟁 관련 최신 뉴스 수집"""
+    client_id     = os.environ["NAVER_CLIENT_ID"]
+    client_secret = os.environ["NAVER_CLIENT_SECRET"]
+    print("  [북한/전쟁] 뉴스 검색 중...")
+
+    keywords = ["북한 미사일", "북한 도발", "북한 핵", "우크라이나 전쟁", "가자지구", "중동 전쟁"]
+    headers = {
+        "X-Naver-Client-Id":     client_id,
+        "X-Naver-Client-Secret": client_secret,
+    }
+
+    news_list = []
+    seen_titles = set()
+
+    for keyword in keywords:
+        try:
+            resp = requests.get(
+                "https://openapi.naver.com/v1/search/news.json",
+                headers=headers,
+                params={"query": keyword, "display": 3, "sort": "date"},
+                timeout=10
+            )
+            items = resp.json().get("items", [])
+            for item in items:
+                title = re.sub(r"<[^>]+>", "", item.get("title", "")).strip()
+                link  = item.get("originallink") or item.get("link", "")
+                desc  = re.sub(r"<[^>]+>", "", item.get("description", "")).strip()
+                pub   = item.get("pubDate", "")
+
+                if title in seen_titles:
+                    continue
+
+                try:
+                    pub_dt = datetime.strptime(pub, "%a, %d %b %Y %H:%M:%S %z").astimezone(KST)
+                    age_hours = (datetime.now(KST) - pub_dt).total_seconds() / 3600
+                    if age_hours > 24:
+                        continue
+                    pub_str = pub_dt.strftime("%m/%d %H:%M")
+                except:
+                    pub_str = ""
+
+                seen_titles.add(title)
+                news_list.append({
+                    "title":   title,
+                    "desc":    desc,
+                    "url":     link,
+                    "pub":     pub_str,
+                    "keyword": keyword,
+                })
+
+                if len(news_list) >= 6:
+                    break
+        except Exception as e:
+            print(f"    오류 ({keyword}): {e}")
+
+        if len(news_list) >= 6:
+            break
+
+    print(f"    → {len(news_list)}개 수집")
+    return news_list
 
 
 def summarize(editorials, sisain, edition, start, end):
@@ -294,7 +370,7 @@ def summarize(editorials, sisain, edition, start, end):
     return "AI 요약 실패 - 원문을 직접 확인해 주세요."
 
 
-def build_email(editorials, sisain, summary, edition, start, end):
+def build_email(editorials, sisain, security_news, summary, edition, start, end):
     period   = f"{start.strftime('%m/%d %H:%M')} ~ {end.strftime('%m/%d %H:%M')}"
     date_str = datetime.now(KST).strftime("%Y년 %m월 %d일")
     dow = datetime.now(KST).strftime("%a").replace(
@@ -327,6 +403,25 @@ def build_email(editorials, sisain, summary, edition, start, end):
   <div style="font-size:15px;line-height:1.85;color:#333;
               border-top:1px solid #e8e8e8;padding-top:14px;">{paras}</div>
 </div>"""
+
+    # 북한/전쟁 뉴스 섹션
+    security_html = ""
+    if security_news:
+        news_items_html = ""
+        for news in security_news:
+            news_items_html += f"""
+<div style="border-left:3px solid #c62828;padding:10px 14px;margin-bottom:12px;background:#fff8f8;">
+  <div style="font-size:13px;color:#c62828;margin-bottom:4px;">{news['keyword']} · {news['pub']}</div>
+  <a href="{news['url']}" style="font-size:15px;font-weight:bold;color:#1a1a1a;text-decoration:none;">
+    {news['title']}
+  </a>
+  <p style="margin:6px 0 0;font-size:13px;color:#555;line-height:1.6;">{news['desc']}</p>
+  <a href="{news['url']}" style="font-size:12px;color:#c62828;">🔗 원문 보기</a>
+</div>"""
+        security_html = f"""
+<h2 style="font-size:18px;color:#c62828;border-bottom:2px solid #c62828;
+           padding-bottom:8px;margin:32px 0 20px;">🚨 북한/전쟁 주요 소식</h2>
+<div style="margin-bottom:24px;">{news_items_html}</div>"""
 
     sisain_html = ""
     if sisain:
@@ -363,6 +458,7 @@ def build_email(editorials, sisain, summary, edition, start, end):
     <div style="line-height:1.85;font-size:14px;">{summary_html}</div>
   </div>
   {sisain_html}
+  {security_html}
   <h2 style="font-size:18px;color:#1a3a5c;border-bottom:2px solid #1a3a5c;
              padding-bottom:8px;margin-bottom:20px;">📄 사설 원문</h2>
   {cards}
@@ -447,15 +543,18 @@ if __name__ == "__main__":
     editorials = get_editorials()
     print(f"\n   → 총 {len(editorials)}개 수집 완료\n")
 
-    print("② 시사인 새로 나온 책 수집 중...")
+    print("② 북한/전쟁 뉴스 수집 중...")
+    security_news = get_security_news()
+    print()
+    print("③ 시사인 새로 나온 책 수집 중...")
     sisain = get_sisain_books()
     print(f"   → {'수집 완료' if sisain else '없음'}\n")
 
-    print("③ AI 요약 중...")
+    print("④ AI 요약 중...")
     summary = summarize(editorials, sisain, edition, start, end)
     print("   → 완료\n")
 
-    print("④ 이메일 발송 중...")
-    subject, html, plain = build_email(editorials, sisain, summary, edition, start, end)
+    print("⑤ 이메일 발송 중...")
+    subject, html, plain = build_email(editorials, sisain, security_news, summary, edition, start, end)
     send_gmail(subject, html, plain)
     print("\n🎉 완료!")
