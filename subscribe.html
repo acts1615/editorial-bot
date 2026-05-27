@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>잡다한 사설들 — 구독 신청</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Malgun Gothic', Apple SD Gothic Neo, sans-serif;
+    background: #f0f4f8;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 40px;
+    max-width: 480px;
+    width: 100%;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+  }
+  .header {
+    background: #1a3a5c;
+    color: #fff;
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 28px;
+    text-align: center;
+  }
+  .header h1 { font-size: 22px; margin-bottom: 6px; }
+  .header p  { font-size: 13px; opacity: .8; }
+  .tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 24px;
+  }
+  .tab {
+    flex: 1;
+    padding: 10px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    background: #fff;
+    cursor: pointer;
+    font-size: 15px;
+    font-family: inherit;
+    transition: all .2s;
+  }
+  .tab.active {
+    border-color: #1a3a5c;
+    background: #1a3a5c;
+    color: #fff;
+  }
+  .form-group { margin-bottom: 16px; }
+  label { display: block; font-size: 13px; color: #666; margin-bottom: 6px; }
+  input {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 15px;
+    font-family: inherit;
+    outline: none;
+    transition: border .2s;
+  }
+  input:focus { border-color: #1a3a5c; }
+  .btn {
+    width: 100%;
+    padding: 14px;
+    background: #1a3a5c;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-family: inherit;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: background .2s;
+  }
+  .btn:hover { background: #122840; }
+  .btn:disabled { background: #aaa; cursor: not-allowed; }
+  .msg {
+    margin-top: 16px;
+    padding: 14px;
+    border-radius: 8px;
+    font-size: 14px;
+    text-align: center;
+    display: none;
+  }
+  .msg.success { background: #e8f5e9; color: #2e7d32; }
+  .msg.error   { background: #ffebee; color: #c62828; }
+  .info {
+    margin-top: 24px;
+    padding: 16px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    font-size: 13px;
+    color: #666;
+    line-height: 1.7;
+  }
+  .info strong { color: #1a3a5c; }
+  #unsubForm { display: none; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    <h1>📰 잡다한 사설들</h1>
+    <p>매일 아침 7시 · 저녁 7시 자동 발송</p>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="showTab('sub')">✉️ 구독 신청</button>
+    <button class="tab" onclick="showTab('unsub')">🚫 구독 해지</button>
+  </div>
+
+  <!-- 구독 신청 폼 -->
+  <div id="subForm">
+    <div class="form-group">
+      <label>이름</label>
+      <input type="text" id="subName" placeholder="홍길동">
+    </div>
+    <div class="form-group">
+      <label>이메일 주소</label>
+      <input type="email" id="subEmail" placeholder="example@gmail.com">
+    </div>
+    <button class="btn" onclick="handleSubscribe()">구독 신청하기</button>
+    <div class="msg" id="subMsg"></div>
+  </div>
+
+  <!-- 구독 해지 폼 -->
+  <div id="unsubForm">
+    <div class="form-group">
+      <label>이메일 주소</label>
+      <input type="email" id="unsubEmail" placeholder="구독 시 사용한 이메일">
+    </div>
+    <button class="btn" onclick="handleUnsubscribe()" style="background:#c62828;">구독 해지하기</button>
+    <div class="msg" id="unsubMsg"></div>
+  </div>
+
+  <div class="info">
+    <strong>📌 안내</strong><br>
+    • 하루 2회 (오전 7시 · 오후 7시) 발송<br>
+    • 조선 · 동아 · 한겨레 · 경향 · 중앙일보 사설<br>
+    • AI 요약 + 원문 포함<br>
+    • 시사인 새로 나온 책 코너 포함<br>
+    • 언제든지 해지 가능
+  </div>
+</div>
+
+<script>
+const SCRIPT_URL = "https://script.google.com/u/0/home/projects/1ur1gC_ihql5QdbuUs2rbi9MikmWuSf3wwywhANj8Pd9AfN2ftnq8WjA_/edit";
+
+function showTab(tab) {
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    t.classList.toggle('active', (i === 0 && tab === 'sub') || (i === 1 && tab === 'unsub'));
+  });
+  document.getElementById('subForm').style.display   = tab === 'sub'   ? 'block' : 'none';
+  document.getElementById('unsubForm').style.display = tab === 'unsub' ? 'block' : 'none';
+}
+
+function showMsg(id, text, type) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = `msg ${type}`;
+  el.style.display = 'block';
+}
+
+async function handleSubscribe() {
+  const name  = document.getElementById('subName').value.trim();
+  const email = document.getElementById('subEmail').value.trim();
+  if (!email) { showMsg('subMsg', '이메일을 입력해 주세요.', 'error'); return; }
+
+  const btn = document.querySelector('#subForm .btn');
+  btn.disabled = true;
+  btn.textContent = '처리 중...';
+
+  try {
+    const url = `${SCRIPT_URL}?action=subscribe&email=${encodeURIComponent(email)}&name=${encodeURIComponent(name)}`;
+    await fetch(url, { mode: 'no-cors' });
+    showMsg('subMsg', '✅ 구독 신청 완료! 다음 발송 시 이메일을 받으실 수 있어요.', 'success');
+  } catch(e) {
+    showMsg('subMsg', '오류가 발생했어요. 잠시 후 다시 시도해 주세요.', 'error');
+  }
+  btn.disabled = false;
+  btn.textContent = '구독 신청하기';
+}
+
+async function handleUnsubscribe() {
+  const email = document.getElementById('unsubEmail').value.trim();
+  if (!email) { showMsg('unsubMsg', '이메일을 입력해 주세요.', 'error'); return; }
+
+  const btn = document.querySelector('#unsubForm .btn');
+  btn.disabled = true;
+  btn.textContent = '처리 중...';
+
+  try {
+    const url = `${SCRIPT_URL}?action=unsubscribe&email=${encodeURIComponent(email)}`;
+    await fetch(url, { mode: 'no-cors' });
+    showMsg('unsubMsg', '✅ 구독 해지 완료! 더 이상 이메일이 발송되지 않아요.', 'success');
+  } catch(e) {
+    showMsg('unsubMsg', '오류가 발생했어요. 잠시 후 다시 시도해 주세요.', 'error');
+  }
+  btn.disabled = false;
+  btn.textContent = '구독 해지하기';
+}
+</script>
+</body>
+</html>
