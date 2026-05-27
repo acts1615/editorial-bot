@@ -341,16 +341,35 @@ def build_email(editorials, sisain, summary, edition, start, end):
     return subject, html, plain
 
 
-def send_gmail(subject, html, plain):
-    sender   = os.environ["SENDER_EMAIL"]
-    password = os.environ["GMAIL_APP_PASSWORD"]
-    recipients = []
+def get_subscribers():
+    """Google Apps Script에서 구독자 목록을 가져옵니다."""
+    script_url = os.environ.get("APPS_SCRIPT_URL", "")
+    subscribers = []
+    if script_url:
+        try:
+            resp = requests.get(f"{script_url}?action=list", timeout=15)
+            if resp.status_code == 200:
+                data = resp.json()
+                subscribers = [item["email"] for item in data if item.get("email")]
+                print(f"   구글 시트 구독자: {len(subscribers)}명")
+        except Exception as e:
+            print(f"   구글 시트 오류: {e}")
+
+    # 기존 Secret 이메일도 포함 (백업)
     keys = ["RECIPIENT_EMAIL"] + [f"RECIPIENT_EMAIL{i}" for i in range(2, 11)]
     for key in keys:
         email = os.environ.get(key, "").strip()
-        if email and email not in recipients:
-            recipients.append(email)
-    print(f"   수신자 {len(recipients)}명: {', '.join(recipients)}")
+        if email and email not in subscribers:
+            subscribers.append(email)
+
+    return subscribers
+
+
+def send_gmail(subject, html, plain):
+    sender    = os.environ["SENDER_EMAIL"]
+    password  = os.environ["GMAIL_APP_PASSWORD"]
+    recipients = get_subscribers()
+    print(f"   총 수신자 {len(recipients)}명: {', '.join(recipients)}")
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(sender, password)
         for recipient in recipients:
