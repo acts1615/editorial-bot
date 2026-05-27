@@ -470,44 +470,32 @@ def build_email(editorials, sisain, security_news, summary, edition, start, end)
   </div>
 </div>"""
 
-    # 북한/전쟁 뉴스 섹션 - 리더 모드
+    # 북한/전쟁 뉴스 섹션 - 요약 + 링크
     security_html = ""
     if security_news:
         news_items_html = ""
         for news in security_news:
-            # 전문 스크래핑
-            scraped = scrape_article(news["url"], "")
-            full_content = scraped.get("content") or news.get("desc", "")
-            news_paras = "".join(
-                f"<p style='margin:0 0 16px;font-size:15px;line-height:1.9;color:#1a1a1a;text-indent:1em;'>{p}</p>"
-                for p in full_content.split("\n") if p.strip() and len(p.strip()) > 10
-            ) or f"<p style='font-size:15px;color:#555;'>{news.get('desc','')}</p>"
-
             cat = news.get("category", "안보/전쟁")
             cat_color = "#c62828" if "북한" in cat else "#e65100" if "전쟁" in cat else "#1565c0"
-
             news_items_html += f"""
-<div style="margin-bottom:32px;border-radius:12px;overflow:hidden;
-            box-shadow:0 2px 12px rgba(0,0,0,0.08);">
-  <div style="background:{cat_color};padding:14px 20px;">
-    <div style="color:rgba(255,255,255,0.8);font-size:12px;margin-bottom:6px;">
-      {cat} · {news['pub']}
-    </div>
-    <h3 style="margin:0;font-size:16px;color:#fff;line-height:1.4;">{news['title']}</h3>
+<div style="padding:14px 16px;margin-bottom:10px;border-radius:8px;
+            background:#fff;border:1px solid #eee;border-left:4px solid {cat_color};">
+  <div style="font-size:12px;color:{cat_color};margin-bottom:5px;font-weight:bold;">
+    {cat} · {news['pub']}
   </div>
-  <div style="background:#fffef9;padding:20px 24px;">
-    {news_paras}
-    <div style="border-top:1px solid #eee;padding-top:10px;margin-top:4px;">
-      <a href="{news['url']}" style="font-size:13px;color:#888;text-decoration:none;">
-        🔗 광고 없이 원문 보기
-      </a>
-    </div>
+  <div style="font-size:15px;font-weight:bold;color:#1a1a1a;margin-bottom:6px;line-height:1.4;">
+    {news['title']}
   </div>
+  <div style="font-size:13px;color:#555;line-height:1.6;margin-bottom:8px;">
+    {news.get('desc', '')}
+  </div>
+  <a href="{news['url']}" style="font-size:12px;color:#888;text-decoration:none;">
+    🔗 원문 보기
+  </a>
 </div>"""
-
         security_html = f"""
 <h2 style="font-size:18px;color:#c62828;border-bottom:2px solid #c62828;
-           padding-bottom:8px;margin:32px 0 20px;">🚨 북한/전쟁 주요 소식</h2>
+           padding-bottom:8px;margin:32px 0 16px;">🚨 북한/전쟁 주요 소식</h2>
 {news_items_html}"""
 
     sisain_html = ""
