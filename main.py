@@ -449,13 +449,14 @@ def build_email(editorials, sisain, security_news, summaries, edition, start, en
     <div style="font-size:14px;opacity:.85;">{edition} · {date_str}</div>
   </div>
 
-  {security_html}
   {sisain_html}
 
   <!-- 사설 섹션 -->
   <h2 style="font-size:18px;color:#1a3a5c;border-bottom:2px solid #1a3a5c;
              padding-bottom:8px;margin:28px 0 20px;">📰 오늘의 사설</h2>
   {editorial_blocks}
+
+  {security_html}
 
   <!-- 구독 버튼 -->
   <div style="text-align:center;margin:32px 0 20px;">
