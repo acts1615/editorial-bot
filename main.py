@@ -78,71 +78,128 @@ def scrape_article(url, paper):
     return result
 
 
-def search_naver_editorial(paper):
+def get_editorials():
+    """[사설] 키워드로 한번에 검색 후 신문사 도메인으로 분류"""
     client_id     = os.environ["NAVER_CLIENT_ID"]
     client_secret = os.environ["NAVER_CLIENT_SECRET"]
-    params  = {"query": f"{paper} 사설", "display": 50, "sort": "date"}
     headers = {"X-Naver-Client-Id": client_id, "X-Naver-Client-Secret": client_secret}
-    try:
-        resp  = requests.get("https://openapi.naver.com/v1/search/news.json",
-                             headers=headers, params=params, timeout=10)
-        print(f"    네이버 API: {resp.status_code}, {len(resp.json().get('items',[]))}개")
-        for item in resp.json().get("items", []):
-            title = re.sub(r"<[^>]+>", "", item.get("title", "")).strip()
-            link  = item.get("originallink") or item.get("link", "")
-            pub   = item.get("pubDate", "")
 
-            if any(b in link for b in BLOCKED_DOMAINS):
-                continue
+    DOMAIN_TO_PAPER = {
+        "hani.co.kr":     "한겨레",
+        "chosun.com":     "조선일보",
+        "donga.com":      "동아일보",
+        "khan.co.kr":     "경향신문",
+        "joongang.co.kr": "중앙일보",
+        "joins.com":      "중앙일보",
+    }
+    NOT_EDITORIAL = ["[단독]", "[인터뷰]", "학위복", "[속보]", "[포토]", "[영상]"]
+    found = {}
 
-            editorial_url = any(p in link for p in [
-                "/opinion/editorial", "/arti/opinion/editorial",
-                "/Opinion/article", "/news/Opinion", "/editorial/"
-            ])
-            editorial_title = title.startswith("[사설]") or title.startswith("사설")
-            if not editorial_title and not editorial_url:
-                continue
-            if any(x in title for x in ["[단독]", "[인터뷰]", "학위복", "[속보]"]):
-                continue
+    queries = ["[사설]", "사설 한겨레 조선일보", "신문사설 오늘"]
 
-            try:
-                pub_dt  = datetime.strptime(pub, "%a, %d %b %Y %H:%M:%S %z").astimezone(KST)
-                pub_str = pub_dt.strftime("%Y-%m-%d %H:%M")
-                if (datetime.now(KST) - pub_dt).total_seconds() / 3600 > 48:
+    for query in queries:
+        if len(found) >= len(PAPERS):
+            break
+        try:
+            resp = requests.get("https://openapi.naver.com/v1/search/news.json",
+                                headers=headers,
+                                params={"query": query, "display": 50, "sort": "date"},
+                                timeout=10)
+            items = resp.json().get("items", [])
+            print(f"  쿼리 '{query}': {len(items)}개")
+
+            for item in items:
+                title = re.sub(r"<[^>]+>", "", item.get("title", "")).strip()
+                link  = item.get("originallink") or item.get("link", "")
+                desc  = re.sub(r"<[^>]+>", "", item.get("description", "")).strip()
+                pub   = item.get("pubDate", "")
+
+                # 신문사 판별
+                paper = next((p for d, p in DOMAIN_TO_PAPER.items() if d in link), None)
+                if not paper or paper in found:
                     continue
-            except:
-                pub_str = pub[:16] if pub else "시각 미상"
 
-            scraped = scrape_article(link, paper) if link else {}
-            content = scraped.get("content", "")
-            author  = scraped.get("author", "") or "논설위원실"
+                # 차단 도메인
+                if any(b in link for b in BLOCKED_DOMAINS):
+                    continue
 
-            ui_noise = ["공유하기", "카카오톡으로 공유하기", "페이스북으로 공유하기",
-                        "트위터로 공유하기", "URL 복사", "창 닫기", "SNS", "퍼가기"]
-            lines   = [l for l in content.split("\n") if not any(n in l for n in ui_noise)]
-            content = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+                # 사설 아닌 것 제외
+                if any(x in title for x in NOT_EDITORIAL):
+                    continue
 
-            if len(content) < 100:
-                content = re.sub(r"<[^>]+>", "", item.get("description", "")).strip()
+                # 시간 필터 (48시간)
+                try:
+                    pub_dt  = datetime.strptime(pub, "%a, %d %b %Y %H:%M:%S %z").astimezone(KST)
+                    pub_str = pub_dt.strftime("%Y-%m-%d %H:%M")
+                    if (datetime.now(KST) - pub_dt).total_seconds() / 3600 > 48:
+                        continue
+                except:
+                    pub_str = pub[:16] if pub else "시각 미상"
 
-            if title and content:
-                print(f"    ✓ {title[:40]}")
-                return {"paper": paper, "title": title, "author": author,
-                        "pub": pub_str, "content": content, "url": link}
+                # 본문: 스크래핑 실패시 description 사용
+                scraped = scrape_article(link, paper)
+                content = scraped.get("content", "") or desc
+                author  = scraped.get("author", "") or "논설위원실"
 
-        print(f"    ⚠️ 사설 없음")
-    except Exception as e:
-        print(f"    오류: {e}")
-    return None
+                # UI 노이즈 제거
+                ui_noise = ["공유하기", "카카오톡으로 공유하기", "URL 복사", "창 닫기", "SNS"]
+                lines = [l for l in content.split("\n") if not any(n in l for n in ui_noise)]
+                content = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
+                if title and content:
+                    found[paper] = {"paper": paper, "title": title, "author": author,
+                                    "pub": pub_str, "content": content, "url": link}
+                    print(f"  ✓ [{paper}] {title[:40]}")
 
-def get_editorials():
-    editorials = []
+        except Exception as e:
+            print(f"  오류({query}): {e}")
+
+    # 각 신문사별로 개별 검색도 추가 시도 (못 찾은 신문사만)
     for paper in PAPERS:
-        print(f"  [{paper}] 검색 중...")
-        result = search_naver_editorial(paper)
-        if result:
-            editorials.append(result)
+        if paper in found:
+            continue
+        try:
+            resp = requests.get("https://openapi.naver.com/v1/search/news.json",
+                                headers=headers,
+                                params={"query": f"{paper} 사설", "display": 50, "sort": "date"},
+                                timeout=10)
+            for item in resp.json().get("items", []):
+                title = re.sub(r"<[^>]+>", "", item.get("title", "")).strip()
+                link  = item.get("originallink") or item.get("link", "")
+                desc  = re.sub(r"<[^>]+>", "", item.get("description", "")).strip()
+                pub   = item.get("pubDate", "")
+
+                allowed = PAPER_DOMAINS.get(paper, [])
+                if not any(d in link for d in allowed):
+                    continue
+                if any(b in link for b in BLOCKED_DOMAINS):
+                    continue
+                if any(x in title for x in NOT_EDITORIAL):
+                    continue
+
+                try:
+                    pub_dt  = datetime.strptime(pub, "%a, %d %b %Y %H:%M:%S %z").astimezone(KST)
+                    pub_str = pub_dt.strftime("%Y-%m-%d %H:%M")
+                    if (datetime.now(KST) - pub_dt).total_seconds() / 3600 > 48:
+                        continue
+                except:
+                    pub_str = pub[:16] if pub else "시각 미상"
+
+                scraped = scrape_article(link, paper)
+                content = scraped.get("content", "") or desc
+                author  = scraped.get("author", "") or "논설위원실"
+
+                if title and content:
+                    found[paper] = {"paper": paper, "title": title, "author": author,
+                                    "pub": pub_str, "content": content, "url": link}
+                    print(f"  ✓ [{paper}] {title[:40]}")
+                    break
+
+        except Exception as e:
+            print(f"  [{paper}] 개별검색 오류: {e}")
+
+    editorials = [found[p] for p in PAPERS if p in found]
+    print(f"  → 총 {len(editorials)}개 수집완료")
     return editorials
 
 
@@ -384,55 +441,41 @@ def build_email(editorials, sisain, security_news, summaries, edition, start, en
   </div>
 </div>"""
 
-    # 사설 (신문사별: 헤더 → AI요약 → 원문)
+    # 사설 (신문사별: 헤더 → AI요약 → 원문 링크)
     editorial_blocks = ""
     for ed in editorials:
         ai = summaries.get(ed["paper"], {})
-        ai_summary  = ai.get("summary", "요약을 불러올 수 없습니다.")
-        stance      = ai.get("stance", "")
-        keywords    = " ".join([f"#{k}" for k in ai.get("keywords", [])])
-
-        paras = "".join(
-            f"<p style='margin:0 0 14px;font-size:15px;line-height:1.85;color:#1a1a1a;text-indent:1em;'>{p}</p>"
-            for p in ed["content"].split("\n") if p.strip() and len(p.strip()) > 10
-        )
+        ai_summary = ai.get("summary", "요약을 불러올 수 없습니다.")
+        stance     = ai.get("stance", "")
+        keywords   = " ".join([f"#{k}" for k in ai.get("keywords", [])])
 
         editorial_blocks += f"""
-<div style="margin-bottom:40px;border-radius:12px;overflow:hidden;
-            box-shadow:0 2px 16px rgba(0,0,0,0.10);">
-
-  <!-- ① 헤더: 신문사 / 제목 / 작성자 -->
-  <div style="background:#1a3a5c;padding:18px 22px;">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
-      <span style="background:rgba(255,255,255,0.2);color:#fff;font-size:13px;
-                   font-weight:bold;padding:3px 12px;border-radius:20px;">{ed['paper']}</span>
-      <span style="color:rgba(255,255,255,0.65);font-size:12px;">{ed['pub']}</span>
-    </div>
-    <h2 style="margin:0 0 8px;font-size:18px;color:#fff;line-height:1.4;font-weight:bold;">
-      {ed['title']}
-    </h2>
-    <span style="color:rgba(255,255,255,0.7);font-size:13px;">✍️ {ed['author']}</span>
+<div style="padding:16px 18px;margin-bottom:12px;border-radius:10px;
+            background:#fff;border:1px solid #e0e0e0;border-left:4px solid #1a3a5c;">
+  <!-- 신문사 / 날짜 -->
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+    <span style="background:#1a3a5c;color:#fff;font-size:12px;font-weight:bold;
+                 padding:2px 10px;border-radius:20px;">{ed['paper']}</span>
+    <span style="color:#999;font-size:12px;">{ed['pub']}</span>
   </div>
-
-  <!-- ② AI 요약 -->
-  <div style="background:#eef2f7;padding:18px 22px;border-bottom:1px solid #d0d8e4;">
-    <div style="font-size:12px;color:#1a3a5c;font-weight:bold;margin-bottom:8px;">🤖 AI 요약</div>
-    <p style="margin:0 0 10px;font-size:14px;line-height:1.8;color:#333;">{ai_summary}</p>
-    <div style="font-size:12px;color:#666;">
+  <!-- 제목 -->
+  <div style="font-size:16px;font-weight:bold;color:#1a1a1a;margin-bottom:4px;line-height:1.4;">
+    {ed['title']}
+  </div>
+  <!-- 작성자 -->
+  <div style="font-size:12px;color:#888;margin-bottom:10px;">✍️ {ed['author']}</div>
+  <!-- AI 요약 -->
+  <div style="background:#f0f4f8;border-radius:6px;padding:12px 14px;margin-bottom:10px;">
+    <div style="font-size:11px;color:#1a3a5c;font-weight:bold;margin-bottom:6px;">🤖 AI 요약</div>
+    <div style="font-size:14px;line-height:1.75;color:#333;">{ai_summary}</div>
+    <div style="font-size:12px;color:#888;margin-top:6px;">
       논조: <strong>{stance}</strong> &nbsp;·&nbsp; {keywords}
     </div>
   </div>
-
-  <!-- ③ 원문 -->
-  <div style="background:#fffef9;padding:22px 26px;">
-    <div style="font-size:12px;color:#999;margin-bottom:14px;font-weight:bold;">📄 원문</div>
-    {paras}
-    <div style="border-top:1px solid #eee;padding-top:12px;margin-top:4px;">
-      <a href="{ed['url']}" style="font-size:13px;color:#888;text-decoration:none;">
-        🔗 광고 없이 원문 보기
-      </a>
-    </div>
-  </div>
+  <!-- 원문 링크 -->
+  <a href="{ed['url']}" style="font-size:13px;color:#1a6ec8;text-decoration:none;">
+    🔗 원문 보기
+  </a>
 </div>"""
 
     html = f"""<!DOCTYPE html><html lang="ko">
