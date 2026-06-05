@@ -35,7 +35,7 @@ PAPER_DOMAINS = {
     "중앙일보": ["joongang.co.kr", "joins.com"],
 }
 
-BLOCKED_DOMAINS = ["nongaek.com", "newsis.com", "news1.kr", "yna.co.kr"]
+BLOCKED_DOMAINS = ["nongaek.com", "newsis.com", "news1.kr"]
 
 HEADERS_WEB = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
@@ -203,6 +203,102 @@ def get_editorials():
     return editorials
 
 
+def get_trending_news():
+    """정치/경제/사회/국제 주요 이슈 수집 - AI가 선별"""
+    client_id     = os.environ["NAVER_CLIENT_ID"]
+    client_secret = os.environ["NAVER_CLIENT_SECRET"]
+    headers = {"X-Naver-Client-Id": client_id, "X-Naver-Client-Secret": client_secret}
+    print("  [주요 이슈] 수집 중...")
+
+    categories = {
+        "정치": ["대통령 국회 정치", "여당 야당 법안"],
+        "경제": ["경제 금리 물가", "주식 환율 수출"],
+        "사회": ["사회 사건 사고", "교육 복지 노동"],
+        "국제": ["국제 외교 미국", "트럼프 중국 유럽"],
+    }
+
+    raw_news, seen = [], set()
+
+    for cat, keywords in categories.items():
+        cat_count = 0
+        for keyword in keywords:
+            if cat_count >= 2:
+                break
+            try:
+                resp = requests.get("https://openapi.naver.com/v1/search/news.json",
+                                    headers=headers,
+                                    params={"query": keyword, "display": 5, "sort": "date"},
+                                    timeout=10)
+                for item in resp.json().get("items", []):
+                    title = re.sub(r"<[^>]+>", "", item.get("title", "")).strip()
+                    link  = item.get("originallink") or item.get("link", "")
+                    desc  = re.sub(r"<[^>]+>", "", item.get("description", "")).strip()
+                    pub   = item.get("pubDate", "")
+
+                    if title in seen:
+                        continue
+                    try:
+                        pub_dt = datetime.strptime(pub, "%a, %d %b %Y %H:%M:%S %z").astimezone(KST)
+                        if (datetime.now(KST) - pub_dt).total_seconds() / 3600 > 24:
+                            continue
+                        pub_str = pub_dt.strftime("%m/%d %H:%M")
+                    except:
+                        pub_str = ""
+
+                    seen.add(title)
+                    raw_news.append({"title": title, "desc": desc,
+                                     "url": link, "pub": pub_str, "cat": cat})
+                    cat_count += 1
+                    break
+            except Exception as e:
+                print(f"    오류({keyword}): {e}")
+
+    if not raw_news:
+        return []
+
+    # AI로 주요 이슈 선별
+    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+    groq_key   = os.environ.get("GROQ_API_KEY", "")
+    news_text  = "\n".join([f"{i+1}. [{n['cat']}][{n['pub']}] {n['title']} / {n['desc'][:60]} / {n['url']}"
+                            for i, n in enumerate(raw_news)])
+
+    prompt = f"""다음 뉴스에서 오늘 가장 이슈가 되는 주요 뉴스 최대 6개를 선별하세요.
+{news_text}
+
+각 카테고리(정치/경제/사회/국제)에서 골고루 선택하고 JSON만 응답:
+[{{"title":"","desc":"한줄요약30자이내","url":"","pub":"","category":"정치 또는 경제 또는 사회 또는 국제"}}]"""
+
+    for ver, model in [("v1beta","gemini-2.0-flash"),("v1beta","gemini-2.0-flash-lite")]:
+        try:
+            r = requests.post(
+                f"https://generativelanguage.googleapis.com/{ver}/models/{model}:generateContent?key={gemini_key}",
+                json={"contents":[{"parts":[{"text":prompt}]}]}, timeout=30)
+            if r.status_code == 200:
+                text = re.sub(r"```json|```","",r.json()["candidates"][0]["content"]["parts"][0]["text"]).strip()
+                result = json.loads(text)
+                print(f"    → Gemini 선별: {len(result)}개")
+                return result
+        except:
+            pass
+
+    if groq_key:
+        for model in ["llama-3.3-70b-versatile","llama-3.1-8b-instant"]:
+            try:
+                r = requests.post("https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization":f"Bearer {groq_key}","Content-Type":"application/json"},
+                    json={"model":model,"messages":[{"role":"user","content":prompt}],"max_tokens":800},
+                    timeout=30)
+                if r.status_code == 200:
+                    text = re.sub(r"```json|```","",r.json()["choices"][0]["message"]["content"]).strip()
+                    result = json.loads(text)
+                    print(f"    → Groq 선별: {len(result)}개")
+                    return result
+            except:
+                pass
+
+    return [{**n, "category": n["cat"]} for n in raw_news[:6]]
+
+
 def get_sisain_books():
     client_id     = os.environ["NAVER_CLIENT_ID"]
     client_secret = os.environ["NAVER_CLIENT_SECRET"]
@@ -242,7 +338,7 @@ def get_security_news():
     client_id     = os.environ["NAVER_CLIENT_ID"]
     client_secret = os.environ["NAVER_CLIENT_SECRET"]
     print("  [안보/전쟁] 검색 중...")
-    keywords = ["전쟁", "분쟁 교전", "북한", "원유 에너지 안보", "해협", "핵 미사일"]
+    keywords = ["전쟁", "분쟁 교전", "북한", "원유 에너지 안보", "해협", "핵 미사일", "연합뉴스 북한 전쟁"]
     naver_headers = {"X-Naver-Client-Id": client_id, "X-Naver-Client-Secret": client_secret}
     raw_news, seen = [], set()
 
@@ -281,6 +377,11 @@ def get_security_news():
                             for i, n in enumerate(raw_news)])
     prompt = f"""뉴스 목록에서 안보/전쟁/경제안보 관련 최대 6개 선별. JSON만 응답:
 {news_text}
+선별 기준:
+- 북한 관련 뉴스 (연합뉴스 포함 모든 출처 가능)
+- 전쟁/분쟁 (우크라이나, 중동, 이란, 헤즈볼라 등)
+- 경제안보 (호르무즈, 원유, 에너지, 반도체)
+연합뉴스(yna.co.kr) 기사도 적극 포함할 것.
 [{{"title":"","desc":"한줄요약","url":"","pub":"","category":"북한 또는 전쟁분쟁 또는 경제안보"}}]
 해당없으면 []"""
 
@@ -384,7 +485,7 @@ JSON 형식으로만 응답 (다른 텍스트 없이):
     return summaries
 
 
-def build_email(editorials, sisain, security_news, summaries, edition, start, end):
+def build_email(editorials, sisain, security_news, trending_news, summaries, edition, start, end):
     period   = f"{start.strftime('%m/%d %H:%M')} ~ {end.strftime('%m/%d %H:%M')}"
     date_str = datetime.now(KST).strftime("%Y년 %m월 %d일")
     dow = datetime.now(KST).strftime("%a").replace(
@@ -421,6 +522,33 @@ def build_email(editorials, sisain, security_news, summaries, edition, start, en
 {items_html}"""
 
     # 시사인
+    # 오늘의 주요 이슈
+    trending_html = ""
+    if trending_news:
+        cat_colors = {"정치":"#8e24aa","경제":"#1565c0","사회":"#2e7d32","국제":"#e65100"}
+        items_html = ""
+        for news in trending_news:
+            cat   = news.get("category","일반")
+            color = cat_colors.get(cat, "#555")
+            items_html += f"""
+<div style="padding:14px 16px;margin-bottom:10px;border-radius:8px;
+            background:#fff;border:1px solid #eee;border-left:4px solid {color};">
+  <div style="font-size:12px;color:{color};margin-bottom:5px;font-weight:bold;">
+    {cat} · {news['pub']}
+  </div>
+  <div style="font-size:15px;font-weight:bold;color:#1a1a1a;margin-bottom:6px;line-height:1.4;">
+    {news['title']}
+  </div>
+  <div style="font-size:13px;color:#555;line-height:1.6;margin-bottom:8px;">
+    {news.get('desc','')}
+  </div>
+  <a href="{news['url']}" style="font-size:12px;color:#888;text-decoration:none;">🔗 원문 보기</a>
+</div>"""
+        trending_html = f"""
+<h2 style="font-size:18px;color:#333;border-bottom:2px solid #333;
+           padding-bottom:8px;margin:28px 0 16px;">📌 오늘의 주요 이슈</h2>
+{items_html}"""
+
     sisain_html = ""
     if sisain:
         paras = "".join(
@@ -492,12 +620,13 @@ def build_email(editorials, sisain, security_news, summaries, edition, start, en
     <div style="font-size:14px;opacity:.85;">{edition} · {date_str}</div>
   </div>
 
-  {sisain_html}
-
   <!-- 사설 섹션 -->
   <h2 style="font-size:18px;color:#1a3a5c;border-bottom:2px solid #1a3a5c;
              padding-bottom:8px;margin:28px 0 20px;">📰 오늘의 사설</h2>
   {editorial_blocks}
+
+  {trending_html}
+  {sisain_html}
 
   {security_html}
 
@@ -581,7 +710,11 @@ if __name__ == "__main__":
     editorials = get_editorials()
     print(f"   → {len(editorials)}개 수집 완료\n")
 
-    print("② 북한/전쟁 뉴스 수집 중...")
+    print("② 주요 이슈 수집 중...")
+    trending_news = get_trending_news()
+    print()
+
+    print("③ 북한/전쟁 뉴스 수집 중...")
     security_news = get_security_news()
     print()
 
@@ -594,6 +727,6 @@ if __name__ == "__main__":
     print()
 
     print("⑤ 이메일 발송 중...")
-    subject, html, plain = build_email(editorials, sisain, security_news, summaries, edition, start, end)
+    subject, html, plain = build_email(editorials, sisain, security_news, trending_news, summaries, edition, start, end)
     send_gmail(subject, html, plain)
     print("\n🎉 완료!")
