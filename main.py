@@ -1,5 +1,5 @@
 """
-신문 사설 자동 요약 & 이메일 발송 봇 v2026.06.23-1
+신문 사설 자동 요약 & 이메일 발송 봇 v2026.06.23-1303
 구조: 신문사/제목/작성자 → AI 요약 → 원문 (신문사별 개별 구성)
 """
 
@@ -700,6 +700,7 @@ def build_email(editorials, sisain, security_news, trending_news, summaries, edi
         keywords   = escape(" ".join([f"#{k}" for k in ai.get("keywords", [])]))
         text_page_url = escape(ed.get("text_page_url", ed.get("url", "")), quote=True)
         source_url = escape(ed.get("url", ""))
+        source_url_display = source_url.replace("://", "://<wbr>").replace(".", ".<wbr>")
 
         editorial_blocks += f"""
 <div style="padding:16px 18px;margin-bottom:12px;border-radius:10px;
@@ -729,7 +730,7 @@ def build_email(editorials, sisain, security_news, trending_news, summaries, edi
     📄 원문보기
   </a>
   <div style="font-size:11px;color:#777;line-height:1.5;margin-top:6px;word-break:break-all;">
-    출처 URL (복사/붙여넣기용): {source_url}
+    출처 URL (복사/붙여넣기용): <span style="color:#777;text-decoration:none;cursor:text;pointer-events:none;">{source_url_display}</span>
   </div>
 </div>"""
 
