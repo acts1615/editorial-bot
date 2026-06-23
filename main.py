@@ -1,12 +1,14 @@
 """
-신문 사설 자동 요약 & 이메일 발송 봇 v6
+신문 사설 자동 요약 & 이메일 발송 봇 v2026.06.23-1
 구조: 신문사/제목/작성자 → AI 요약 → 원문 (신문사별 개별 구성)
 """
 
-import os, re, smtplib, json
+import os, re, smtplib, json, hashlib, shutil
 from datetime import datetime, timezone, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from html import escape
+from pathlib import Path
 
 import requests
 from bs4 import BeautifulSoup
@@ -485,6 +487,122 @@ JSON 형식으로만 응답 (다른 텍스트 없이):
     return summaries
 
 
+PAPER_SLUGS = {
+    "한겨레": "hani",
+    "조선일보": "chosun",
+    "동아일보": "donga",
+    "경향신문": "khan",
+    "중앙일보": "joongang",
+}
+
+
+def safe_slug(value):
+    slug = re.sub(r"[^0-9a-zA-Z가-힣_-]+", "-", value).strip("-")
+    return slug.lower() or "article"
+
+
+def article_date_key(edition, start):
+    suffix = "morning" if "아침" in edition else "evening"
+    return f"{start.strftime('%Y-%m-%d')}-{suffix}"
+
+
+def cleanup_old_article_pages(days=30):
+    originals_dir = Path("originals")
+    if not originals_dir.exists():
+        return
+    cutoff = datetime.now(KST).date() - timedelta(days=days)
+    for path in originals_dir.iterdir():
+        if not path.is_dir():
+            continue
+        match = re.match(r"(\d{4}-\d{2}-\d{2})-(morning|evening)$", path.name)
+        if not match:
+            continue
+        try:
+            folder_date = datetime.strptime(match.group(1), "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        if folder_date < cutoff:
+            shutil.rmtree(path)
+            print(f"  오래된 원문 페이지 삭제: {path}")
+
+
+def build_article_pages(editorials, edition, start):
+    """사설 본문을 광고 없는 GitHub Pages용 텍스트 전용 HTML로 저장합니다."""
+    if not editorials:
+        return
+
+    base_url = os.environ.get("BASE_PAGES_URL", "https://acts1615.github.io/editorial-bot").rstrip("/")
+    date_key = article_date_key(edition, start)
+    output_dir = Path("originals") / date_key
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for ed in editorials:
+        paper = ed.get("paper", "신문")
+        digest = hashlib.sha256(ed.get("url", "").encode("utf-8")).hexdigest()[:10]
+        paper_slug = PAPER_SLUGS.get(paper, safe_slug(paper))
+        filename = f"{paper_slug}-{digest}.html"
+        page_path = output_dir / filename
+        page_url = f"{base_url}/originals/{date_key}/{filename}"
+        ed["text_page_url"] = page_url
+
+        title = escape(ed.get("title", "제목 없음"))
+        paper_html = escape(paper)
+        author = escape(ed.get("author", ""))
+        pub = escape(ed.get("pub", ""))
+        content = escape(ed.get("content", "")).strip()
+        source_url = escape(ed.get("url", ""))
+        generated_at = escape(datetime.now(KST).strftime("%Y-%m-%d %H:%M KST"))
+
+        page_html = f"""<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{title} | 잡다한 사설들</title>
+<style>
+  * {{ box-sizing: border-box; }}
+  body {{
+    margin: 0;
+    background: #f5f5f5;
+    color: #222;
+    font-family: 'Malgun Gothic', Apple SD Gothic Neo, sans-serif;
+    line-height: 1.8;
+  }}
+  .wrap {{ max-width: 760px; margin: 0 auto; padding: 20px; }}
+  .card {{ background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 2px 14px rgba(0,0,0,.08); }}
+  .badge {{ display: inline-block; background: #1a3a5c; color: #fff; border-radius: 20px; padding: 3px 12px; font-size: 13px; font-weight: bold; }}
+  h1 {{ font-size: 24px; line-height: 1.45; margin: 14px 0 8px; }}
+  .meta {{ color: #777; font-size: 13px; margin-bottom: 18px; }}
+  .notice {{ background: #f0f4f8; border-radius: 8px; padding: 12px 14px; color: #456; font-size: 13px; margin-bottom: 20px; }}
+  pre {{ white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; margin: 0; font-family: inherit; font-size: 17px; line-height: 1.9; }}
+  .source {{ margin-top: 28px; padding-top: 18px; border-top: 1px solid #eee; color: #666; font-size: 13px; }}
+  .url {{ margin-top: 6px; padding: 10px; background: #fafafa; border: 1px solid #eee; border-radius: 6px; word-break: break-all; color: #333; }}
+  .footer {{ text-align: center; color: #aaa; font-size: 12px; margin-top: 18px; }}
+</style>
+</head>
+<body>
+  <main class="wrap">
+    <article class="card">
+      <span class="badge">{paper_html}</span>
+      <h1>{title}</h1>
+      <div class="meta">✍️ {author} &nbsp;·&nbsp; {pub}</div>
+      <div class="notice">광고 없이 읽을 수 있도록 이메일 발송 시점에 수집한 원문 텍스트만 표시합니다. 메일로 돌아가려면 브라우저의 뒤로가기를 누르세요.</div>
+      <pre>{content}</pre>
+      <div class="source">
+        <strong>출처 URL</strong> <span style="color:#999;">(복사해서 브라우저에 붙여넣어야 원문 사이트로 이동할 수 있습니다)</span>
+        <div class="url">{source_url}</div>
+      </div>
+    </article>
+    <div class="footer">GitHub Actions + Gemini/Groq AI 자동 생성 | {generated_at}</div>
+  </main>
+</body>
+</html>"""
+        page_path.write_text(page_html, encoding="utf-8")
+
+    cleanup_old_article_pages()
+    print(f"  텍스트 전용 원문 페이지 {len(editorials)}개 생성: {output_dir}")
+
+
 def build_email(editorials, sisain, security_news, trending_news, summaries, edition, start, end):
     period   = f"{start.strftime('%m/%d %H:%M')} ~ {end.strftime('%m/%d %H:%M')}"
     date_str = datetime.now(KST).strftime("%Y년 %m월 %d일")
@@ -569,13 +687,19 @@ def build_email(editorials, sisain, security_news, trending_news, summaries, edi
   </div>
 </div>"""
 
-    # 사설 (신문사별: 헤더 → AI요약 → 원문 링크)
+    # 사설 (신문사별: 헤더 → AI요약 → 텍스트 전용 원문 링크)
     editorial_blocks = ""
     for ed in editorials:
         ai = summaries.get(ed["paper"], {})
-        ai_summary = ai.get("summary", "요약을 불러올 수 없습니다.")
-        stance     = ai.get("stance", "")
-        keywords   = " ".join([f"#{k}" for k in ai.get("keywords", [])])
+        paper      = escape(ed.get("paper", ""))
+        pub        = escape(ed.get("pub", ""))
+        title      = escape(ed.get("title", ""))
+        author     = escape(ed.get("author", ""))
+        ai_summary = escape(ai.get("summary", "요약을 불러올 수 없습니다."))
+        stance     = escape(ai.get("stance", ""))
+        keywords   = escape(" ".join([f"#{k}" for k in ai.get("keywords", [])]))
+        text_page_url = escape(ed.get("text_page_url", ed.get("url", "")), quote=True)
+        source_url = escape(ed.get("url", ""))
 
         editorial_blocks += f"""
 <div style="padding:16px 18px;margin-bottom:12px;border-radius:10px;
@@ -583,15 +707,15 @@ def build_email(editorials, sisain, security_news, trending_news, summaries, edi
   <!-- 신문사 / 날짜 -->
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
     <span style="background:#1a3a5c;color:#fff;font-size:12px;font-weight:bold;
-                 padding:2px 10px;border-radius:20px;">{ed['paper']}</span>
-    <span style="color:#999;font-size:12px;">{ed['pub']}</span>
+                 padding:2px 10px;border-radius:20px;">{paper}</span>
+    <span style="color:#999;font-size:12px;">{pub}</span>
   </div>
   <!-- 제목 -->
   <div style="font-size:16px;font-weight:bold;color:#1a1a1a;margin-bottom:4px;line-height:1.4;">
-    {ed['title']}
+    {title}
   </div>
   <!-- 작성자 -->
-  <div style="font-size:12px;color:#888;margin-bottom:10px;">✍️ {ed['author']}</div>
+  <div style="font-size:12px;color:#888;margin-bottom:10px;">✍️ {author}</div>
   <!-- AI 요약 -->
   <div style="background:#f0f4f8;border-radius:6px;padding:12px 14px;margin-bottom:10px;">
     <div style="font-size:11px;color:#1a3a5c;font-weight:bold;margin-bottom:6px;">🤖 AI 요약</div>
@@ -600,10 +724,13 @@ def build_email(editorials, sisain, security_news, trending_news, summaries, edi
       논조: <strong>{stance}</strong> &nbsp;·&nbsp; {keywords}
     </div>
   </div>
-  <!-- 원문 링크 -->
-  <a href="{ed['url']}" style="font-size:13px;color:#1a6ec8;text-decoration:none;">
-    🔗 원문 보기
+  <!-- 텍스트 전용 원문 링크 / 실제 출처 URL -->
+  <a href="{text_page_url}" style="font-size:13px;color:#1a6ec8;text-decoration:none;font-weight:bold;">
+    📄 원문보기
   </a>
+  <div style="font-size:11px;color:#777;line-height:1.5;margin-top:6px;word-break:break-all;">
+    출처 URL (복사/붙여넣기용): {source_url}
+  </div>
 </div>"""
 
     html = f"""<!DOCTYPE html><html lang="ko">
@@ -651,7 +778,9 @@ def build_email(editorials, sisain, security_news, trending_news, summaries, edi
         plain += f"\n{'='*40}\n"
         plain += f"【{ed['paper']}】 {ed['title']}\n✍️ {ed['author']} | {ed['pub']}\n\n"
         plain += f"[AI 요약]\n{ai.get('summary','')}\n논조: {ai.get('stance','')} | {' '.join(['#'+k for k in ai.get('keywords',[])])}\n\n"
-        plain += f"[원문]\n{ed['content']}\n🔗 {ed['url']}\n"
+        plain += f"[원문보기 - 텍스트 전용]\n{ed.get('text_page_url', '')}\n\n"
+        plain += f"[출처 URL - 복사/붙여넣기용]\n{ed['url']}\n\n"
+        plain += f"[원문]\n{ed['content']}\n"
 
     return subject, html, plain
 
@@ -726,7 +855,11 @@ if __name__ == "__main__":
     summaries = summarize_each(editorials)
     print()
 
-    print("⑤ 이메일 발송 중...")
+    print("⑤ 텍스트 전용 원문 페이지 생성 중...")
+    build_article_pages(editorials, edition, start)
+    print()
+
+    print("⑥ 이메일 발송 중...")
     subject, html, plain = build_email(editorials, sisain, security_news, trending_news, summaries, edition, start, end)
     send_gmail(subject, html, plain)
     print("\n🎉 완료!")
