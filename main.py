@@ -37,6 +37,27 @@ PAPER_DOMAINS = {
     "중앙일보": ["joongang.co.kr", "joins.com"],
 }
 
+DOMAIN_TO_PAPER = {
+    "hani.co.kr":     "한겨레",
+    "chosun.com":     "조선일보",
+    "donga.com":      "동아일보",
+    "khan.co.kr":     "경향신문",
+    "joongang.co.kr": "중앙일보",
+    "joins.com":      "중앙일보",
+    "yna.co.kr":      "연합뉴스",
+    "yonhapnews.co.kr": "연합뉴스",
+    "hankyung.com":   "한국경제",
+    "mk.co.kr":       "매일경제",
+    "mt.co.kr":       "머니투데이",
+    "sedaily.com":    "서울경제",
+    "ytn.co.kr":      "YTN",
+    "sbs.co.kr":      "SBS",
+    "mbc.co.kr":      "MBC",
+    "kbs.co.kr":      "KBS",
+    "jtbc.co.kr":     "JTBC",
+    "sisain.co.kr":   "시사인",
+}
+
 BLOCKED_DOMAINS = ["nongaek.com", "newsis.com", "news1.kr"]
 
 HEADERS_WEB = {
@@ -49,9 +70,32 @@ PAPER_CONFIG = {
     "동아일보": {"body": [".article_txt"],            "author": [".reporter_name"]},
     "경향신문": {"body": [".art_body"],               "author": [".reporter_area .name"]},
     "중앙일보": {"body": [".article_body"],           "author": [".byline__name"]},
+    "연합뉴스": {"body": ["#articleWrap", ".story-news", "#article-view-content-div", ".article"],
+                "author": [".writer-info", ".txt-info", ".byline"]},
+    "한국경제": {"body": ["#articletxt", ".article-body", "#article-body-content"],
+                "author": [".author-info", ".byline"]},
+    "매일경제": {"body": [".art_txt", "#article_body", ".news_cnt_detail_wrap"],
+                "author": [".author_name", ".byline"]},
+    "머니투데이": {"body": ["#textBody", ".view_text", ".article_body"],
+                 "author": [".name", ".byline"]},
+    "시사인":   {"body": [".article-body", "#article-view-content-div", ".view-content"],
+                "author": [".writer", ".byline"]},
 }
-DEFAULT_BODY   = ["article", ".article", ".news_body", "#articleBody", "main", ".content"]
-DEFAULT_AUTHOR = [".author", ".byline", ".reporter"]
+DEFAULT_BODY   = [
+    "article", ".article", ".news_body", "#articleBody", "#article-view-content-div",
+    ".article_body", ".article-body", ".news_cnt_detail_wrap", "main", ".content",
+]
+DEFAULT_AUTHOR = [".author", ".byline", ".reporter", ".writer"]
+UI_NOISE = ["공유하기", "카카오톡으로 공유하기", "URL 복사", "창 닫기", "SNS"]
+
+
+def detect_paper(url):
+    return next((p for d, p in DOMAIN_TO_PAPER.items() if d in (url or "")), None)
+
+
+def clean_article_content(content):
+    lines = [l for l in (content or "").split("\n") if not any(n in l for n in UI_NOISE)]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
 
 def scrape_article(url, paper):
@@ -80,20 +124,30 @@ def scrape_article(url, paper):
     return result
 
 
+def enrich_news_with_content(news_list):
+    """정치/경제/사회/국제/북한 등 뉴스 본문을 스크래핑해 텍스트 전용 원문용 content를 채웁니다."""
+    for news in news_list or []:
+        url = news.get("url", "")
+        if not url:
+            continue
+        paper = detect_paper(url) or ""
+        scraped = scrape_article(url, paper)
+        content = clean_article_content(scraped.get("content", "") or news.get("desc", ""))
+        news["content"] = content
+        news["author"] = scraped.get("author", "") or news.get("author", "")
+        news["paper"] = paper or news.get("category") or news.get("paper") or "뉴스"
+        title = news.get("title", "")[:40]
+        status = "본문" if scraped.get("content") else "요약대체"
+        print(f"    ✓ 원문수집({status}) [{news['paper']}] {title}")
+    return news_list
+
+
 def get_editorials():
     """[사설] 키워드로 한번에 검색 후 신문사 도메인으로 분류"""
     client_id     = os.environ["NAVER_CLIENT_ID"]
     client_secret = os.environ["NAVER_CLIENT_SECRET"]
     headers = {"X-Naver-Client-Id": client_id, "X-Naver-Client-Secret": client_secret}
 
-    DOMAIN_TO_PAPER = {
-        "hani.co.kr":     "한겨레",
-        "chosun.com":     "조선일보",
-        "donga.com":      "동아일보",
-        "khan.co.kr":     "경향신문",
-        "joongang.co.kr": "중앙일보",
-        "joins.com":      "중앙일보",
-    }
     NOT_EDITORIAL = ["[단독]", "[인터뷰]", "학위복", "[속보]", "[포토]", "[영상]"]
     found = {}
 
@@ -116,9 +170,9 @@ def get_editorials():
                 desc  = re.sub(r"<[^>]+>", "", item.get("description", "")).strip()
                 pub   = item.get("pubDate", "")
 
-                # 신문사 판별
-                paper = next((p for d, p in DOMAIN_TO_PAPER.items() if d in link), None)
-                if not paper or paper in found:
+                # 신문사 판별 (사설은 5대 신문만)
+                paper = detect_paper(link)
+                if not paper or paper not in PAPERS or paper in found:
                     continue
 
                 # 차단 도메인
@@ -140,13 +194,8 @@ def get_editorials():
 
                 # 본문: 스크래핑 실패시 description 사용
                 scraped = scrape_article(link, paper)
-                content = scraped.get("content", "") or desc
+                content = clean_article_content(scraped.get("content", "") or desc)
                 author  = scraped.get("author", "") or "논설위원실"
-
-                # UI 노이즈 제거
-                ui_noise = ["공유하기", "카카오톡으로 공유하기", "URL 복사", "창 닫기", "SNS"]
-                lines = [l for l in content.split("\n") if not any(n in l for n in ui_noise)]
-                content = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
                 if title and content:
                     found[paper] = {"paper": paper, "title": title, "author": author,
@@ -188,7 +237,7 @@ def get_editorials():
                     pub_str = pub[:16] if pub else "시각 미상"
 
                 scraped = scrape_article(link, paper)
-                content = scraped.get("content", "") or desc
+                content = clean_article_content(scraped.get("content", "") or desc)
                 author  = scraped.get("author", "") or "논설위원실"
 
                 if title and content:
@@ -493,6 +542,18 @@ PAPER_SLUGS = {
     "동아일보": "donga",
     "경향신문": "khan",
     "중앙일보": "joongang",
+    "연합뉴스": "yna",
+    "한국경제": "hankyung",
+    "매일경제": "mk",
+    "머니투데이": "mt",
+    "시사인": "sisain",
+    "정치": "politics",
+    "경제": "economy",
+    "사회": "society",
+    "국제": "world",
+    "북한": "nk",
+    "전쟁분쟁": "conflict",
+    "경제안보": "econ-security",
 }
 
 
@@ -526,9 +587,9 @@ def cleanup_old_article_pages(days=30):
             print(f"  오래된 원문 페이지 삭제: {path}")
 
 
-def build_article_pages(editorials, edition, start):
-    """사설 본문을 광고 없는 GitHub Pages용 텍스트 전용 HTML로 저장합니다."""
-    if not editorials:
+def build_article_pages(articles, edition, start):
+    """사설/뉴스 본문을 광고 없는 GitHub Pages용 텍스트 전용 HTML로 저장합니다."""
+    if not articles:
         return
 
     base_url = os.environ.get("BASE_PAGES_URL", "https://acts1615.github.io/editorial-bot").rstrip("/")
@@ -536,8 +597,8 @@ def build_article_pages(editorials, edition, start):
     output_dir = Path("originals") / date_key
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    for ed in editorials:
-        paper = ed.get("paper", "신문")
+    for ed in articles:
+        paper = ed.get("paper") or ed.get("category") or "뉴스"
         digest = hashlib.sha256(ed.get("url", "").encode("utf-8")).hexdigest()[:10]
         paper_slug = PAPER_SLUGS.get(paper, safe_slug(paper))
         filename = f"{paper_slug}-{digest}.html"
@@ -552,6 +613,8 @@ def build_article_pages(editorials, edition, start):
         content = escape(ed.get("content", "")).strip()
         source_url = escape(ed.get("url", ""))
         generated_at = escape(datetime.now(KST).strftime("%Y-%m-%d %H:%M KST"))
+        meta_bits = " &nbsp;·&nbsp; ".join(x for x in [f"✍️ {author}" if author else "", pub] if x)
+        meta_html = f'<div class="meta">{meta_bits}</div>' if meta_bits else ""
 
         page_html = f"""<!DOCTYPE html>
 <html lang="ko">
@@ -585,7 +648,7 @@ def build_article_pages(editorials, edition, start):
     <article class="card">
       <span class="badge">{paper_html}</span>
       <h1>{title}</h1>
-      <div class="meta">✍️ {author} &nbsp;·&nbsp; {pub}</div>
+      {meta_html}
       <div class="notice">광고 없이 읽을 수 있도록 이메일 발송 시점에 수집한 원문 텍스트만 표시합니다. 메일로 돌아가려면 브라우저의 뒤로가기를 누르세요.</div>
       <pre>{content}</pre>
       <div class="source">
@@ -600,7 +663,23 @@ def build_article_pages(editorials, edition, start):
         page_path.write_text(page_html, encoding="utf-8")
 
     cleanup_old_article_pages()
-    print(f"  텍스트 전용 원문 페이지 {len(editorials)}개 생성: {output_dir}")
+    print(f"  텍스트 전용 원문 페이지 {len(articles)}개 생성: {output_dir}")
+
+
+def text_original_link_html(item, link_style="font-size:12px;color:#1a6ec8;text-decoration:none;font-weight:bold;"):
+    """광고 없는 텍스트 원문 링크 + 출처 URL(복사용). text_page_url이 없으면 외부 URL로 폴백."""
+    text_page_url = item.get("text_page_url")
+    source_url = escape(item.get("url", ""))
+    source_url_display = source_url.replace("://", "://<wbr>").replace(".", ".<wbr>")
+    if text_page_url:
+        href = escape(text_page_url, quote=True)
+        return f"""
+  <a href="{href}" style="{link_style}">📄 원문보기</a>
+  <div style="font-size:11px;color:#777;line-height:1.5;margin-top:6px;word-break:break-all;">
+    출처 URL (복사/붙여넣기용): <span style="color:#777;text-decoration:none;cursor:text;pointer-events:none;">{source_url_display}</span>
+  </div>"""
+    href = escape(item.get("url", ""), quote=True)
+    return f'<a href="{href}" style="font-size:12px;color:#888;text-decoration:none;">🔗 원문 보기</a>'
 
 
 def build_email(editorials, sisain, security_news, trending_news, summaries, edition, start, end):
@@ -632,7 +711,7 @@ def build_email(editorials, sisain, security_news, trending_news, summaries, edi
   <div style="font-size:13px;color:#555;line-height:1.6;margin-bottom:8px;">
     {news.get('desc','')}
   </div>
-  <a href="{news['url']}" style="font-size:12px;color:#888;text-decoration:none;">🔗 원문 보기</a>
+  {text_original_link_html(news)}
 </div>"""
         security_html = f"""
 <h2 style="font-size:18px;color:#c62828;border-bottom:2px solid #c62828;
@@ -660,7 +739,7 @@ def build_email(editorials, sisain, security_news, trending_news, summaries, edi
   <div style="font-size:13px;color:#555;line-height:1.6;margin-bottom:8px;">
     {news.get('desc','')}
   </div>
-  <a href="{news['url']}" style="font-size:12px;color:#888;text-decoration:none;">🔗 원문 보기</a>
+  {text_original_link_html(news)}
 </div>"""
         trending_html = f"""
 <h2 style="font-size:18px;color:#333;border-bottom:2px solid #333;
@@ -698,10 +777,6 @@ def build_email(editorials, sisain, security_news, trending_news, summaries, edi
         ai_summary = escape(ai.get("summary", "요약을 불러올 수 없습니다."))
         stance     = escape(ai.get("stance", ""))
         keywords   = escape(" ".join([f"#{k}" for k in ai.get("keywords", [])]))
-        text_page_url = escape(ed.get("text_page_url", ed.get("url", "")), quote=True)
-        source_url = escape(ed.get("url", ""))
-        source_url_display = source_url.replace("://", "://<wbr>").replace(".", ".<wbr>")
-
         editorial_blocks += f"""
 <div style="padding:16px 18px;margin-bottom:12px;border-radius:10px;
             background:#fff;border:1px solid #e0e0e0;border-left:4px solid #1a3a5c;">
@@ -726,12 +801,7 @@ def build_email(editorials, sisain, security_news, trending_news, summaries, edi
     </div>
   </div>
   <!-- 텍스트 전용 원문 링크 / 실제 출처 URL -->
-  <a href="{text_page_url}" style="font-size:13px;color:#1a6ec8;text-decoration:none;font-weight:bold;">
-    📄 원문보기
-  </a>
-  <div style="font-size:11px;color:#777;line-height:1.5;margin-top:6px;word-break:break-all;">
-    출처 URL (복사/붙여넣기용): <span style="color:#777;text-decoration:none;cursor:text;pointer-events:none;">{source_url_display}</span>
-  </div>
+  {text_original_link_html(ed, link_style="font-size:13px;color:#1a6ec8;text-decoration:none;font-weight:bold;")}
 </div>"""
 
     html = f"""<!DOCTYPE html><html lang="ko">
@@ -856,11 +926,17 @@ if __name__ == "__main__":
     summaries = summarize_each(editorials)
     print()
 
-    print("⑤ 텍스트 전용 원문 페이지 생성 중...")
-    build_article_pages(editorials, edition, start)
+    print("⑤ 뉴스 원문 수집 중...")
+    enrich_news_with_content(trending_news)
+    enrich_news_with_content(security_news)
     print()
 
-    print("⑥ 이메일 발송 중...")
+    print("⑥ 텍스트 전용 원문 페이지 생성 중...")
+    all_articles = list(editorials) + list(trending_news or []) + list(security_news or [])
+    build_article_pages(all_articles, edition, start)
+    print()
+
+    print("⑦ 이메일 발송 중...")
     subject, html, plain = build_email(editorials, sisain, security_news, trending_news, summaries, edition, start, end)
     send_gmail(subject, html, plain)
     print("\n🎉 완료!")
