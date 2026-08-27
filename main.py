@@ -319,7 +319,7 @@ def get_trending_news():
 각 카테고리(정치/경제/사회/국제)에서 골고루 선택하고 JSON만 응답:
 [{{"title":"","desc":"한줄요약30자이내","url":"","pub":"","category":"정치 또는 경제 또는 사회 또는 국제"}}]"""
 
-    for ver, model in [("v1beta","gemini-2.0-flash"),("v1beta","gemini-2.0-flash-lite")]:
+    for ver, model in [("v1beta","gemini-2.5-flash"),("v1beta","gemini-2.5-flash-lite")]:
         try:
             r = requests.post(
                 f"https://generativelanguage.googleapis.com/{ver}/models/{model}:generateContent?key={gemini_key}",
@@ -333,7 +333,7 @@ def get_trending_news():
             pass
 
     if groq_key:
-        for model in ["llama-3.3-70b-versatile","llama-3.1-8b-instant"]:
+        for model in ["openai/gpt-oss-120b","openai/gpt-oss-20b"]:
             try:
                 r = requests.post("https://api.groq.com/openai/v1/chat/completions",
                     headers={"Authorization":f"Bearer {groq_key}","Content-Type":"application/json"},
@@ -436,7 +436,7 @@ def get_security_news():
 [{{"title":"","desc":"한줄요약","url":"","pub":"","category":"북한 또는 전쟁분쟁 또는 경제안보"}}]
 해당없으면 []"""
 
-    for ver, model in [("v1beta","gemini-2.0-flash"),("v1beta","gemini-2.0-flash-lite")]:
+    for ver, model in [("v1beta","gemini-2.5-flash"),("v1beta","gemini-2.5-flash-lite")]:
         try:
             r = requests.post(
                 f"https://generativelanguage.googleapis.com/{ver}/models/{model}:generateContent?key={gemini_key}",
@@ -450,7 +450,7 @@ def get_security_news():
             pass
 
     if groq_key:
-        for model in ["llama-3.3-70b-versatile","llama-3.1-8b-instant"]:
+        for model in ["openai/gpt-oss-120b","openai/gpt-oss-20b"]:
             try:
                 r = requests.post("https://api.groq.com/openai/v1/chat/completions",
                     headers={"Authorization":f"Bearer {groq_key}","Content-Type":"application/json"},
@@ -498,7 +498,7 @@ JSON 형식으로만 응답 (다른 텍스트 없이):
 
     def call_ai(prompt):
         # Gemini
-        for ver, model in [("v1beta","gemini-2.0-flash"),("v1beta","gemini-2.0-flash-lite")]:
+        for ver, model in [("v1beta","gemini-2.5-flash"),("v1beta","gemini-2.5-flash-lite")]:
             try:
                 r = requests.post(
                     f"https://generativelanguage.googleapis.com/{ver}/models/{model}:generateContent?key={gemini_key}",
@@ -510,7 +510,7 @@ JSON 형식으로만 응답 (다른 텍스트 없이):
                 pass
         # Groq
         if groq_key:
-            for model in ["llama-3.3-70b-versatile","llama-3.1-8b-instant"]:
+            for model in ["openai/gpt-oss-120b","openai/gpt-oss-20b"]:
                 try:
                     r = requests.post("https://api.groq.com/openai/v1/chat/completions",
                         headers={"Authorization":f"Bearer {groq_key}","Content-Type":"application/json"},
