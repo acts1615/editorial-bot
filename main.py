@@ -598,6 +598,66 @@ def summarize_each(editorials):
     return summaries
 
 
+def summarize_news_items(news_list, label="뉴스"):
+    """뉴스 항목별 AI 요약 (주요 이슈, 북한/전쟁 등)."""
+    if not news_list:
+        return {}
+
+    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+    groq_key   = os.environ.get("GROQ_API_KEY", "")
+    summaries = {}
+
+    for i, news in enumerate(news_list):
+        content = news.get("content") or news.get("desc", "")
+        if not content.strip():
+            continue
+
+        cat = news.get("category") or news.get("cat", "일반")
+        prompt = f"""다음 뉴스 기사를 요약하세요.
+
+[{cat}] {news['title']}
+{content[:1500]}
+
+JSON 객체 하나만 출력 (다른 텍스트 없이):
+{{"summary": "200자 이상 핵심 요약. 사실관계와 배경을 구체적으로 서술.", "keywords": ["키워드1", "키워드2", "키워드3"]}}
+
+반드시 한국어로만 작성하세요."""
+
+        result, provider = call_ai(prompt, gemini_key, groq_key, max_tokens=1500, timeout=60)
+
+        if isinstance(result, list) and result:
+            result = result[0]
+        key = news.get("url") or news.get("title", str(i))
+        if isinstance(result, dict) and result.get("summary"):
+            summaries[key] = result
+            print(f"    ✓ [{cat}] {provider} 요약 완료")
+        else:
+            print(f"    ✗ [{cat}] {news['title'][:30]} 요약 실패")
+
+        if i < len(news_list) - 1:
+            time.sleep(GROQ_COOLDOWN_SEC)
+
+    print(f"    → {len(summaries)}개 {label} 요약 완료")
+    return summaries
+
+
+def _news_summary_html(news, news_summaries):
+    ai = news_summaries.get(news.get("url", ""), {})
+    ai_summary = escape(ai.get("summary", ""))
+    if ai_summary:
+        keywords = escape(" ".join([f"#{k}" for k in ai.get("keywords", [])]))
+        return f"""
+  <div style="background:#f0f4f8;border-radius:6px;padding:12px 14px;margin-bottom:8px;">
+    <div style="font-size:11px;color:#333;font-weight:bold;margin-bottom:6px;">🤖 AI 요약</div>
+    <div style="font-size:14px;line-height:1.75;color:#333;">{ai_summary}</div>
+    <div style="font-size:12px;color:#888;margin-top:6px;">{keywords}</div>
+  </div>"""
+    return f"""
+  <div style="font-size:13px;color:#555;line-height:1.6;margin-bottom:8px;">
+    {escape(news.get('desc', ''))}
+  </div>"""
+
+
 PAPER_SLUGS = {
     "한겨레": "hani",
     "조선일보": "chosun",
@@ -744,7 +804,8 @@ def text_original_link_html(item, link_style="font-size:12px;color:#1a6ec8;text-
     return f'<a href="{href}" style="font-size:12px;color:#888;text-decoration:none;">🔗 원문 보기</a>'
 
 
-def build_email(editorials, sisain, security_news, trending_news, summaries, edition, start, end):
+def build_email(editorials, sisain, security_news, trending_news, summaries, edition, start, end, news_summaries=None):
+    news_summaries = news_summaries or {}
     period   = f"{start.strftime('%m/%d %H:%M')} ~ {end.strftime('%m/%d %H:%M')}"
     date_str = datetime.now(KST).strftime("%Y년 %m월 %d일")
     dow = datetime.now(KST).strftime("%a").replace(
@@ -770,9 +831,7 @@ def build_email(editorials, sisain, security_news, trending_news, summaries, edi
   <div style="font-size:15px;font-weight:bold;color:#1a1a1a;margin-bottom:6px;line-height:1.4;">
     {news['title']}
   </div>
-  <div style="font-size:13px;color:#555;line-height:1.6;margin-bottom:8px;">
-    {news.get('desc','')}
-  </div>
+  {_news_summary_html(news, news_summaries)}
   {text_original_link_html(news)}
 </div>"""
         security_html = f"""
@@ -798,9 +857,7 @@ def build_email(editorials, sisain, security_news, trending_news, summaries, edi
   <div style="font-size:15px;font-weight:bold;color:#1a1a1a;margin-bottom:6px;line-height:1.4;">
     {news['title']}
   </div>
-  <div style="font-size:13px;color:#555;line-height:1.6;margin-bottom:8px;">
-    {news.get('desc','')}
-  </div>
+  {_news_summary_html(news, news_summaries)}
   {text_original_link_html(news)}
 </div>"""
         trending_html = f"""
@@ -993,12 +1050,20 @@ if __name__ == "__main__":
     enrich_news_with_content(security_news)
     print()
 
-    print("⑦ 텍스트 전용 원문 페이지 생성 중...")
+    print("⑦ 주요 이슈 AI 요약 중...")
+    news_summaries = summarize_news_items(trending_news, "주요 이슈")
+    print()
+
+    print("⑧ 북한/전쟁 AI 요약 중...")
+    news_summaries.update(summarize_news_items(security_news, "북한/전쟁"))
+    print()
+
+    print("⑨ 텍스트 전용 원문 페이지 생성 중...")
     all_articles = list(editorials) + list(trending_news or []) + list(security_news or [])
     build_article_pages(all_articles, edition, start)
     print()
 
-    print("⑧ 이메일 발송 중...")
-    subject, html, plain = build_email(editorials, sisain, security_news, trending_news, summaries, edition, start, end)
+    print("⑩ 이메일 발송 중...")
+    subject, html, plain = build_email(editorials, sisain, security_news, trending_news, summaries, edition, start, end, news_summaries)
     send_gmail(subject, html, plain)
     print("\n🎉 완료!")
