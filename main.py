@@ -26,7 +26,7 @@ GROQ_MODELS = [
     "openai/gpt-oss-20b",
     "openai/gpt-oss-120b",
 ]
-GROQ_COOLDOWN_SEC = 15
+GROQ_COOLDOWN_SEC = 8
 
 
 def _retry_after_seconds(resp):
@@ -144,15 +144,25 @@ def call_groq(prompt, groq_key, max_tokens=3000, timeout=60, retries=3):
     return None
 
 
-def call_ai(prompt, gemini_key, groq_key, max_tokens=3000, timeout=60):
-    """Groq(무료) 우선, Gemini는 백업."""
-    result = call_groq(prompt, groq_key, max_tokens=max_tokens, timeout=timeout)
-    if result:
-        return result, "Groq"
-    result = call_gemini(prompt, gemini_key, timeout=timeout)
-    if result:
-        return result, "Gemini"
+def call_ai(prompt, gemini_key, groq_key, max_tokens=3000, timeout=60, prefer="groq"):
+    """AI 호출. prefer='gemini'면 요약용(빠른 TPM), 'groq'면 선별용."""
+    order = ("gemini", "groq") if prefer == "gemini" else ("groq", "gemini")
+    for name in order:
+        if name == "gemini":
+            result = call_gemini(prompt, gemini_key, timeout=timeout)
+            if result:
+                return result, "Gemini"
+        else:
+            result = call_groq(prompt, groq_key, max_tokens=max_tokens, timeout=timeout)
+            if result:
+                return result, "Groq"
     return None, None
+
+
+def _groq_cooldown(provider):
+    """Groq TPM 한도 회복 — Groq 사용 시에만 대기."""
+    if provider == "Groq":
+        time.sleep(GROQ_COOLDOWN_SEC)
 
 
 def get_time_window():
@@ -447,6 +457,10 @@ def get_trending_news():
     if not raw_news:
         return []
 
+    if len(raw_news) <= 6:
+        print(f"    → 선별 생략 (수집 {len(raw_news)}개)")
+        return [{**n, "category": n["cat"]} for n in raw_news]
+
     # AI로 주요 이슈 선별
     gemini_key = os.environ.get("GEMINI_API_KEY", "")
     groq_key   = os.environ.get("GROQ_API_KEY", "")
@@ -538,6 +552,10 @@ def get_security_news():
     if not raw_news:
         return []
 
+    if len(raw_news) <= 6:
+        print(f"    → 선별 생략 (수집 {len(raw_news)}개)")
+        return [{**n, "category": "안보/전쟁"} for n in raw_news]
+
     # AI 선별
     gemini_key = os.environ.get("GEMINI_API_KEY", "")
     groq_key   = os.environ.get("GROQ_API_KEY", "")
@@ -581,7 +599,7 @@ def summarize_each(editorials):
 
 반드시 한국어로만 작성하세요."""
 
-        result, provider = call_ai(prompt, gemini_key, groq_key, max_tokens=2500, timeout=60)
+        result, provider = call_ai(prompt, gemini_key, groq_key, max_tokens=2500, timeout=60, prefer="gemini")
 
         if isinstance(result, list) and result:
             result = result[0]
@@ -591,8 +609,8 @@ def summarize_each(editorials):
         else:
             print(f"    ✗ [{ed['paper']}] 요약 실패")
 
-        if i < len(editorials) - 1 and groq_key:
-            time.sleep(GROQ_COOLDOWN_SEC)
+        if i < len(editorials) - 1:
+            _groq_cooldown(provider)
 
     print(f"    → {len(summaries)}개 사설 요약 완료")
     return summaries
@@ -623,7 +641,7 @@ JSON 객체 하나만 출력 (다른 텍스트 없이):
 
 반드시 한국어로만 작성하세요."""
 
-        result, provider = call_ai(prompt, gemini_key, groq_key, max_tokens=1500, timeout=60)
+        result, provider = call_ai(prompt, gemini_key, groq_key, max_tokens=1200, timeout=45, prefer="gemini")
 
         if isinstance(result, list) and result:
             result = result[0]
@@ -635,7 +653,7 @@ JSON 객체 하나만 출력 (다른 텍스트 없이):
             print(f"    ✗ [{cat}] {news['title'][:30]} 요약 실패")
 
         if i < len(news_list) - 1:
-            time.sleep(GROQ_COOLDOWN_SEC)
+            _groq_cooldown(provider)
 
     print(f"    → {len(summaries)}개 {label} 요약 완료")
     return summaries
