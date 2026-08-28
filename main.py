@@ -15,6 +15,80 @@ from bs4 import BeautifulSoup
 
 KST = timezone(timedelta(hours=9))
 
+# Gemini 2.5는 신규 API 키에서 404 — latest alias / 3.5 계열 사용
+GEMINI_MODELS = [
+    ("v1beta", "gemini-flash-latest"),
+    ("v1beta", "gemini-flash-lite-latest"),
+    ("v1beta", "gemini-3.5-flash"),
+]
+GROQ_MODELS = [
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "qwen/qwen3.6-27b",
+]
+
+
+def _ai_error_detail(resp):
+    try:
+        data = resp.json()
+        err = data.get("error", data)
+        if isinstance(err, dict):
+            return err.get("message", str(err)[:200])
+        return str(data)[:200]
+    except Exception:
+        return resp.text[:200]
+
+
+def _parse_ai_json(text):
+    text = re.sub(r"```json|```", "", text).strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        match = re.search(r"[\[{][\s\S]*[\]}]", text)
+        if match:
+            return json.loads(match.group())
+        raise
+
+
+def call_gemini(prompt, gemini_key, timeout=60):
+    if not gemini_key:
+        return None
+    for ver, model in GEMINI_MODELS:
+        try:
+            r = requests.post(
+                f"https://generativelanguage.googleapis.com/{ver}/models/{model}:generateContent?key={gemini_key}",
+                json={"contents": [{"parts": [{"text": prompt}]}]},
+                timeout=timeout,
+            )
+            if r.status_code == 200:
+                text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+                return _parse_ai_json(text)
+            print(f"    ⚠️ Gemini/{model}: HTTP {r.status_code} — {_ai_error_detail(r)}")
+        except Exception as e:
+            print(f"    ⚠️ Gemini/{model}: {e}")
+    return None
+
+
+def call_groq(prompt, groq_key, max_tokens=3000, timeout=60):
+    if not groq_key:
+        return None
+    for model in GROQ_MODELS:
+        try:
+            r = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
+                json={"model": model, "messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens},
+                timeout=timeout,
+            )
+            if r.status_code == 200:
+                text = r.json()["choices"][0]["message"]["content"]
+                return _parse_ai_json(text)
+            print(f"    ⚠️ Groq/{model}: HTTP {r.status_code} — {_ai_error_detail(r)}")
+        except Exception as e:
+            print(f"    ⚠️ Groq/{model}: {e}")
+    return None
+
+
 def get_time_window():
     now = datetime.now(KST)
     if now.hour < 12:
@@ -319,33 +393,15 @@ def get_trending_news():
 각 카테고리(정치/경제/사회/국제)에서 골고루 선택하고 JSON만 응답:
 [{{"title":"","desc":"한줄요약30자이내","url":"","pub":"","category":"정치 또는 경제 또는 사회 또는 국제"}}]"""
 
-    for ver, model in [("v1beta","gemini-2.5-flash"),("v1beta","gemini-2.5-flash-lite")]:
-        try:
-            r = requests.post(
-                f"https://generativelanguage.googleapis.com/{ver}/models/{model}:generateContent?key={gemini_key}",
-                json={"contents":[{"parts":[{"text":prompt}]}]}, timeout=30)
-            if r.status_code == 200:
-                text = re.sub(r"```json|```","",r.json()["candidates"][0]["content"]["parts"][0]["text"]).strip()
-                result = json.loads(text)
-                print(f"    → Gemini 선별: {len(result)}개")
-                return result
-        except:
-            pass
+    result = call_gemini(prompt, gemini_key, timeout=30)
+    if result:
+        print(f"    → Gemini 선별: {len(result)}개")
+        return result
 
-    if groq_key:
-        for model in ["openai/gpt-oss-120b","openai/gpt-oss-20b"]:
-            try:
-                r = requests.post("https://api.groq.com/openai/v1/chat/completions",
-                    headers={"Authorization":f"Bearer {groq_key}","Content-Type":"application/json"},
-                    json={"model":model,"messages":[{"role":"user","content":prompt}],"max_tokens":800},
-                    timeout=30)
-                if r.status_code == 200:
-                    text = re.sub(r"```json|```","",r.json()["choices"][0]["message"]["content"]).strip()
-                    result = json.loads(text)
-                    print(f"    → Groq 선별: {len(result)}개")
-                    return result
-            except:
-                pass
+    result = call_groq(prompt, groq_key, max_tokens=800, timeout=30)
+    if result:
+        print(f"    → Groq 선별: {len(result)}개")
+        return result
 
     return [{**n, "category": n["cat"]} for n in raw_news[:6]]
 
@@ -436,33 +492,15 @@ def get_security_news():
 [{{"title":"","desc":"한줄요약","url":"","pub":"","category":"북한 또는 전쟁분쟁 또는 경제안보"}}]
 해당없으면 []"""
 
-    for ver, model in [("v1beta","gemini-2.5-flash"),("v1beta","gemini-2.5-flash-lite")]:
-        try:
-            r = requests.post(
-                f"https://generativelanguage.googleapis.com/{ver}/models/{model}:generateContent?key={gemini_key}",
-                json={"contents":[{"parts":[{"text":prompt}]}]}, timeout=30)
-            if r.status_code == 200:
-                text = re.sub(r"```json|```","",r.json()["candidates"][0]["content"]["parts"][0]["text"]).strip()
-                result = json.loads(text)
-                print(f"    → Gemini 선별: {len(result)}개")
-                return result
-        except:
-            pass
+    result = call_gemini(prompt, gemini_key, timeout=30)
+    if result:
+        print(f"    → Gemini 선별: {len(result)}개")
+        return result
 
-    if groq_key:
-        for model in ["openai/gpt-oss-120b","openai/gpt-oss-20b"]:
-            try:
-                r = requests.post("https://api.groq.com/openai/v1/chat/completions",
-                    headers={"Authorization":f"Bearer {groq_key}","Content-Type":"application/json"},
-                    json={"model":model,"messages":[{"role":"user","content":prompt}],"max_tokens":1000},
-                    timeout=30)
-                if r.status_code == 200:
-                    text = re.sub(r"```json|```","",r.json()["choices"][0]["message"]["content"]).strip()
-                    result = json.loads(text)
-                    print(f"    → Groq 선별: {len(result)}개")
-                    return result
-            except:
-                pass
+    result = call_groq(prompt, groq_key, max_tokens=1000, timeout=30)
+    if result:
+        print(f"    → Groq 선별: {len(result)}개")
+        return result
 
     return [{**n, "category":"안보/전쟁"} for n in raw_news[:6]]
 
@@ -496,34 +534,9 @@ JSON 형식으로만 응답 (다른 텍스트 없이):
 
 반드시 한국어로만 작성하세요."""
 
-    def call_ai(prompt):
-        # Gemini
-        for ver, model in [("v1beta","gemini-2.5-flash"),("v1beta","gemini-2.5-flash-lite")]:
-            try:
-                r = requests.post(
-                    f"https://generativelanguage.googleapis.com/{ver}/models/{model}:generateContent?key={gemini_key}",
-                    json={"contents":[{"parts":[{"text":prompt}]}]}, timeout=60)
-                if r.status_code == 200:
-                    text = re.sub(r"```json|```","",r.json()["candidates"][0]["content"]["parts"][0]["text"]).strip()
-                    return json.loads(text)
-            except:
-                pass
-        # Groq
-        if groq_key:
-            for model in ["openai/gpt-oss-120b","openai/gpt-oss-20b"]:
-                try:
-                    r = requests.post("https://api.groq.com/openai/v1/chat/completions",
-                        headers={"Authorization":f"Bearer {groq_key}","Content-Type":"application/json"},
-                        json={"model":model,"messages":[{"role":"user","content":prompt}],"max_tokens":3000},
-                        timeout=60)
-                    if r.status_code == 200:
-                        text = re.sub(r"```json|```","",r.json()["choices"][0]["message"]["content"]).strip()
-                        return json.loads(text)
-                except:
-                    pass
-        return None
-
-    result = call_ai(prompt)
+    result = call_gemini(prompt, gemini_key, timeout=60)
+    if not result:
+        result = call_groq(prompt, groq_key, max_tokens=3000, timeout=60)
     if not result:
         return {}
 
