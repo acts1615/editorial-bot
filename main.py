@@ -3,7 +3,7 @@
 구조: 신문사/제목/작성자 → AI 요약 → 원문 (신문사별 개별 구성)
 """
 
-import os, re, smtplib, json, hashlib, shutil
+import os, re, smtplib, json, hashlib, shutil, time
 from datetime import datetime, timezone, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -22,10 +22,50 @@ GEMINI_MODELS = [
     ("v1beta", "gemini-3.5-flash"),
 ]
 GROQ_MODELS = [
-    "openai/gpt-oss-120b",
-    "openai/gpt-oss-20b",
     "qwen/qwen3.6-27b",
+    "openai/gpt-oss-20b",
+    "openai/gpt-oss-120b",
 ]
+GROQ_COOLDOWN_SEC = 15
+
+
+def _retry_after_seconds(resp):
+    msg = _ai_error_detail(resp)
+    match = re.search(r"try again in ([\d.]+)s", msg, re.I)
+    return float(match.group(1)) + 1 if match else GROQ_COOLDOWN_SEC
+
+
+def _groq_request_body(model, prompt, max_tokens):
+    body = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.2,
+    }
+    if "gpt-oss" in model:
+        body["reasoning_effort"] = "low"
+        body["max_completion_tokens"] = max_tokens
+    elif "qwen" in model:
+        body["reasoning_effort"] = "none"
+        body["max_tokens"] = max_tokens
+    else:
+        body["max_tokens"] = max_tokens
+    return body
+
+
+def _groq_extract_text(data):
+    msg = data.get("choices", [{}])[0].get("message", {})
+    content = (msg.get("content") or "").strip()
+    if content:
+        return content
+    for key in ("reasoning", "reasoning_content"):
+        val = (msg.get(key) or "").strip()
+        if val:
+            return val
+    return ""
+
+
+def _gemini_credits_depleted(resp):
+    return "prepayment credits" in _ai_error_detail(resp).lower()
 
 
 def _ai_error_detail(resp):
@@ -63,29 +103,43 @@ def call_gemini(prompt, gemini_key, timeout=60):
             if r.status_code == 200:
                 text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
                 return _parse_ai_json(text)
+            if r.status_code == 429 and _gemini_credits_depleted(r):
+                print("    ⚠️ Gemini: 선불 크레딧 소진 — https://ai.studio/projects 에서 충전 또는 새 API 키 필요")
+                return None
             print(f"    ⚠️ Gemini/{model}: HTTP {r.status_code} — {_ai_error_detail(r)}")
         except Exception as e:
             print(f"    ⚠️ Gemini/{model}: {e}")
     return None
 
 
-def call_groq(prompt, groq_key, max_tokens=3000, timeout=60):
+def call_groq(prompt, groq_key, max_tokens=3000, timeout=60, retries=3):
     if not groq_key:
         return None
     for model in GROQ_MODELS:
-        try:
-            r = requests.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
-                json={"model": model, "messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens},
-                timeout=timeout,
-            )
-            if r.status_code == 200:
-                text = r.json()["choices"][0]["message"]["content"]
-                return _parse_ai_json(text)
-            print(f"    ⚠️ Groq/{model}: HTTP {r.status_code} — {_ai_error_detail(r)}")
-        except Exception as e:
-            print(f"    ⚠️ Groq/{model}: {e}")
+        for attempt in range(retries):
+            try:
+                r = requests.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
+                    json=_groq_request_body(model, prompt, max_tokens),
+                    timeout=timeout,
+                )
+                if r.status_code == 200:
+                    text = _groq_extract_text(r.json())
+                    if not text:
+                        print(f"    ⚠️ Groq/{model}: empty response (reasoning consumed token budget?)")
+                        break
+                    return _parse_ai_json(text)
+                if r.status_code == 429 and attempt < retries - 1:
+                    wait = _retry_after_seconds(r)
+                    print(f"    ⏳ Groq/{model}: rate limit, {wait:.0f}s 후 재시도 ({attempt + 2}/{retries})...")
+                    time.sleep(wait)
+                    continue
+                print(f"    ⚠️ Groq/{model}: HTTP {r.status_code} — {_ai_error_detail(r)}")
+                break
+            except Exception as e:
+                print(f"    ⚠️ Groq/{model}: {e}")
+                break
     return None
 
 
@@ -513,38 +567,36 @@ def summarize_each(editorials):
     gemini_key = os.environ.get("GEMINI_API_KEY", "")
     groq_key   = os.environ.get("GROQ_API_KEY", "")
 
-    corpus = ""
+    summaries = {}
     for i, ed in enumerate(editorials):
-        corpus += f"\n\n[{i}] 【{ed['paper']}】 {ed['title']}\n{ed['content'][:2000]}"
+        prompt = f"""다음 신문 사설을 요약하세요.
 
-    prompt = f"""다음 신문 사설들을 각각 요약해 주세요.
+【{ed['paper']}】 {ed['title']}
+{ed['content'][:1500]}
 
-{corpus}
-
-JSON 형식으로만 응답 (다른 텍스트 없이):
-[
-  {{
-    "index": 0,
-    "paper": "신문사명",
-    "summary": "300자 이상 상세 요약. 핵심 주장과 근거를 구체적으로 서술.",
-    "stance": "진보/보수/중도",
-    "keywords": ["키워드1", "키워드2", "키워드3"]
-  }}
-]
+아래 JSON 객체 하나만 출력 (다른 텍스트 없이):
+{{"index": {i}, "paper": "{ed['paper']}", "summary": "300자 이상 상세 요약. 핵심 주장과 근거를 구체적으로 서술.", "stance": "진보 또는 보수 또는 중도", "keywords": ["키워드1", "키워드2", "키워드3"]}}
 
 반드시 한국어로만 작성하세요."""
 
-    result = call_gemini(prompt, gemini_key, timeout=60)
-    if not result:
-        result = call_groq(prompt, groq_key, max_tokens=3000, timeout=60)
-    if not result:
-        return {}
+        result = call_gemini(prompt, gemini_key, timeout=60)
+        if not result and groq_key:
+            if i == 0:
+                print(f"    ⏳ Groq TPM 한도 회복 대기 ({GROQ_COOLDOWN_SEC}s)...")
+            time.sleep(GROQ_COOLDOWN_SEC)
+            result = call_groq(prompt, groq_key, max_tokens=2500, timeout=60)
 
-    summaries = {}
-    for item in result:
-        idx = item.get("index", -1)
-        if 0 <= idx < len(editorials):
-            summaries[editorials[idx]["paper"]] = item
+        if isinstance(result, list) and result:
+            result = result[0]
+        if isinstance(result, dict) and result.get("summary"):
+            summaries[ed["paper"]] = result
+            print(f"    ✓ [{ed['paper']}] 요약 완료")
+        else:
+            print(f"    ✗ [{ed['paper']}] 요약 실패")
+
+        if i < len(editorials) - 1 and groq_key:
+            time.sleep(GROQ_COOLDOWN_SEC)
+
     print(f"    → {len(summaries)}개 사설 요약 완료")
     return summaries
 
@@ -923,33 +975,33 @@ if __name__ == "__main__":
     editorials = get_editorials()
     print(f"   → {len(editorials)}개 수집 완료\n")
 
-    print("② 주요 이슈 수집 중...")
-    trending_news = get_trending_news()
-    print()
-
-    print("③ 북한/전쟁 뉴스 수집 중...")
-    security_news = get_security_news()
-    print()
-
-    print("③ 시사인 새로 나온 책 수집 중...")
-    sisain = get_sisain_books()
-    print()
-
-    print("④ 사설별 AI 요약 중...")
+    print("② 사설별 AI 요약 중...")
     summaries = summarize_each(editorials)
     print()
 
-    print("⑤ 뉴스 원문 수집 중...")
+    print("③ 주요 이슈 수집 중...")
+    trending_news = get_trending_news()
+    print()
+
+    print("④ 북한/전쟁 뉴스 수집 중...")
+    security_news = get_security_news()
+    print()
+
+    print("⑤ 시사인 새로 나온 책 수집 중...")
+    sisain = get_sisain_books()
+    print()
+
+    print("⑥ 뉴스 원문 수집 중...")
     enrich_news_with_content(trending_news)
     enrich_news_with_content(security_news)
     print()
 
-    print("⑥ 텍스트 전용 원문 페이지 생성 중...")
+    print("⑦ 텍스트 전용 원문 페이지 생성 중...")
     all_articles = list(editorials) + list(trending_news or []) + list(security_news or [])
     build_article_pages(all_articles, edition, start)
     print()
 
-    print("⑦ 이메일 발송 중...")
+    print("⑧ 이메일 발송 중...")
     subject, html, plain = build_email(editorials, sisain, security_news, trending_news, summaries, edition, start, end)
     send_gmail(subject, html, plain)
     print("\n🎉 완료!")
