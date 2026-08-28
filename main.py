@@ -104,7 +104,8 @@ def call_gemini(prompt, gemini_key, timeout=60):
                 text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
                 return _parse_ai_json(text)
             if r.status_code == 429 and _gemini_credits_depleted(r):
-                print("    ⚠️ Gemini: 선불 크레딧 소진 — https://ai.studio/projects 에서 충전 또는 새 API 키 필요")
+                print("    ⚠️ Gemini: 무료 티어인데 '선불 크레딧 소진' 오류 — 실제 사용량 문제가 아니라 Google 프로젝트 설정/동기화 버그일 수 있음")
+                print("       → AI Studio(https://ai.studio)에서 새 프로젝트 + API 키 생성 후 GEMINI_API_KEY 교체")
                 return None
             print(f"    ⚠️ Gemini/{model}: HTTP {r.status_code} — {_ai_error_detail(r)}")
         except Exception as e:
@@ -141,6 +142,17 @@ def call_groq(prompt, groq_key, max_tokens=3000, timeout=60, retries=3):
                 print(f"    ⚠️ Groq/{model}: {e}")
                 break
     return None
+
+
+def call_ai(prompt, gemini_key, groq_key, max_tokens=3000, timeout=60):
+    """Groq(무료) 우선, Gemini는 백업."""
+    result = call_groq(prompt, groq_key, max_tokens=max_tokens, timeout=timeout)
+    if result:
+        return result, "Groq"
+    result = call_gemini(prompt, gemini_key, timeout=timeout)
+    if result:
+        return result, "Gemini"
+    return None, None
 
 
 def get_time_window():
@@ -447,14 +459,9 @@ def get_trending_news():
 각 카테고리(정치/경제/사회/국제)에서 골고루 선택하고 JSON만 응답:
 [{{"title":"","desc":"한줄요약30자이내","url":"","pub":"","category":"정치 또는 경제 또는 사회 또는 국제"}}]"""
 
-    result = call_gemini(prompt, gemini_key, timeout=30)
+    result, provider = call_ai(prompt, gemini_key, groq_key, max_tokens=800, timeout=30)
     if result:
-        print(f"    → Gemini 선별: {len(result)}개")
-        return result
-
-    result = call_groq(prompt, groq_key, max_tokens=800, timeout=30)
-    if result:
-        print(f"    → Groq 선별: {len(result)}개")
+        print(f"    → {provider} 선별: {len(result)}개")
         return result
 
     return [{**n, "category": n["cat"]} for n in raw_news[:6]]
@@ -546,14 +553,9 @@ def get_security_news():
 [{{"title":"","desc":"한줄요약","url":"","pub":"","category":"북한 또는 전쟁분쟁 또는 경제안보"}}]
 해당없으면 []"""
 
-    result = call_gemini(prompt, gemini_key, timeout=30)
+    result, provider = call_ai(prompt, gemini_key, groq_key, max_tokens=1000, timeout=30)
     if result:
-        print(f"    → Gemini 선별: {len(result)}개")
-        return result
-
-    result = call_groq(prompt, groq_key, max_tokens=1000, timeout=30)
-    if result:
-        print(f"    → Groq 선별: {len(result)}개")
+        print(f"    → {provider} 선별: {len(result)}개")
         return result
 
     return [{**n, "category":"안보/전쟁"} for n in raw_news[:6]]
@@ -579,18 +581,13 @@ def summarize_each(editorials):
 
 반드시 한국어로만 작성하세요."""
 
-        result = call_gemini(prompt, gemini_key, timeout=60)
-        if not result and groq_key:
-            if i == 0:
-                print(f"    ⏳ Groq TPM 한도 회복 대기 ({GROQ_COOLDOWN_SEC}s)...")
-            time.sleep(GROQ_COOLDOWN_SEC)
-            result = call_groq(prompt, groq_key, max_tokens=2500, timeout=60)
+        result, provider = call_ai(prompt, gemini_key, groq_key, max_tokens=2500, timeout=60)
 
         if isinstance(result, list) and result:
             result = result[0]
         if isinstance(result, dict) and result.get("summary"):
             summaries[ed["paper"]] = result
-            print(f"    ✓ [{ed['paper']}] 요약 완료")
+            print(f"    ✓ [{ed['paper']}] {provider} 요약 완료")
         else:
             print(f"    ✗ [{ed['paper']}] 요약 실패")
 
