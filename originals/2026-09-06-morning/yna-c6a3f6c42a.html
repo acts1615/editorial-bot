@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>[AI프리즘] 북한 김수키, AI 코딩 에이전트까지 썼다…해킹 자동화 | 잡다한 사설들</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #f5f5f5;
+    color: #222;
+    font-family: 'Malgun Gothic', Apple SD Gothic Neo, sans-serif;
+    line-height: 1.8;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 20px; }
+  .card { background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 2px 14px rgba(0,0,0,.08); }
+  .badge { display: inline-block; background: #1a3a5c; color: #fff; border-radius: 20px; padding: 3px 12px; font-size: 13px; font-weight: bold; }
+  h1 { font-size: 24px; line-height: 1.45; margin: 14px 0 8px; }
+  .meta { color: #777; font-size: 13px; margin-bottom: 18px; }
+  .notice { background: #f0f4f8; border-radius: 8px; padding: 12px 14px; color: #456; font-size: 13px; margin-bottom: 20px; }
+  pre { white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; margin: 0; font-family: inherit; font-size: 17px; line-height: 1.9; }
+  .source { margin-top: 28px; padding-top: 18px; border-top: 1px solid #eee; color: #666; font-size: 13px; }
+  .url { margin-top: 6px; padding: 10px; background: #fafafa; border: 1px solid #eee; border-radius: 6px; word-break: break-all; color: #333; }
+  .footer { text-align: center; color: #aaa; font-size: 12px; margin-top: 18px; }
+</style>
+</head>
+<body>
+  <main class="wrap">
+    <article class="card">
+      <span class="badge">연합뉴스</span>
+      <h1>[AI프리즘] 북한 김수키, AI 코딩 에이전트까지 썼다…해킹 자동화</h1>
+      <div class="meta">✍️ 기자 &nbsp;·&nbsp; 09/07 08:37</div>
+      <div class="notice">광고 없이 읽을 수 있도록 이메일 발송 시점에 수집한 원문 텍스트만 표시합니다. 메일로 돌아가려면 브라우저의 뒤로가기를 누르세요.</div>
+      <pre>권하영
+기자
+구독
+구독중
+이전
+다음
+보험·금융 위장 미끼 문서 대량 제작…&#x27;오픈코드&#x27; 활용 첫 확인
+깃허브·페이스트빈서 명령 수신…보안도구 탐지 땐 작동 중단
+이미지 확대
+오픈코드
+오픈코드 화면 [지니언스 시큐리티 센터 제공. 재판매 및 DB 금지]
+(서울=연합뉴스) 권하영 기자 = 북한 연계 해킹 조직 김수키(Kimsuky)가 &#x27;인공지능(AI) 코딩 에이전트&#x27;를 해킹에 악용한 정황이 포착됐다.
+AI가 알아서 문서나 코드를 만들어주는 자동화 도구를 이용해 공격용 미끼 문서를 대량으로 제작한 것이다.
+7일 국내 보안업체 지니언스[263860] 시큐리티 센터는 보고서를 통해 지난달 수집한 악성 파일 13종을 분석한 결과 이같은 사실을 확인했다고 밝혔다.
+◇ &quot;보험료 납부 안내입니다&quot;…AI가 만든 가짜 문서
+공격은 이메일로 유포된 압축 파일에서 시작된다. 파일을 풀면 보험료 납부 안내, 이자 납부 안내, 정책자금 안내 등 그럴듯한 이름의 파일이 들어 있고, 클릭하는 순간 악성 코드가 실행된다.
+지니언스가 이 미끼 문서들을 분석한 결과, 오픈소스 AI 코딩 에이전트인 &#x27;오픈코드(opencode)&#x27;로 만든 흔적이 발견됐다. 문서 속성 정보에 제작 도구로 오픈코드가 그대로 기록돼 있었던 것이다.
+문서 본문 중 납부 주기·금리 등 구체적 수치가 들어가야 할 자리에 &#x27;(임시값)&#x27;이라는 표기가 치환되지 않은 채 그대로 남아 있었다는 점도 AI 코딩 에이전트 활용 근거로 지목된다.
+이는 AI가 생성한 초안을 해커가 제대로 검토하지 않고 유포한 것으로 풀이된다.
+앞서 지니언스는 김수키가 AI와 로컬 대규모언어모델(LLM)을 공격 준비·미끼 제작에 활용한 정황을 공개한 바 있는데, 오픈코드와 같은 AI 코딩 에이전트 활용을 확인한 것은 이번이 처음이다.
+이미지 확대
+미끼 문서에 포함된 플레이스홀더 화면 비교. [지니언스 시큐리티 센터 제공. 재판매 및 DB 금지]
+◇ 깃허브로 명령 받고 보안 도구 감지되면 즉시 멈춰
+악성 파일이 실행되면 해커가 미리 만들어 둔 깃허브(GitHub) 계정에 접속해 추가 명령을 받아온다.
+일부 변종은 해킹 자료를 주로 올리는 텍스트 공유 사이트인 페이스트빈(Pastebin)도 명령 전달 채널로 함께 활용했다. 깃허브 경로가 차단되더라도 페이스트빈을 통해 계속 명령을 수신할 수 있도록 이중으로 대비한 것이다.
+감염된 컴퓨터에는 윈도우 기본 기능인 비트로커(BitLocker)나 소프트웨어 MATLAB으로 위장한 예약 작업도 몰래 등록돼, 5분 후부터 일정 주기로 반복 실행되며 깃허브에서 추가 악성명령을 계속 내려받게 된다.
+신규 변종에서는 탐지를 피하는 기능도 강화됐다.
+보안 분석가들이 쓰는 도구가 실행 중인지 먼저 확인하고, 발견되면 즉시 작동을 멈추는 구조다. 분석 흔적을 지우기 위해 명령어 실행 기록도 스스로 삭제한다.
+지니언스는 &quot;미끼 문서만 봐서는 공격 여부를 판단하기 어려운 시대가 됐다&quot;며 &quot;압축 파일 해제 후 의심스러운 파일 실행, 깃허브·페이스트빈 접속, 숨김 예약 작업 등록 등 일련의 이상 행위를 하나의 흐름으로 묶어 탐지하는 방식으로 통합 보안 체계를 전환해야 한다&quot;고 권고했다.
+kwonhy@yna.co.kr
+제보는 카카오톡 okjebo
+&lt;저작권자(c) 연합뉴스,
+무단 전재-재배포, AI 학습 및 활용 금지&gt;
+2026/09/07 08:37 송고
+2026년09월07일 08시37분 송고
+#북한
+#김수키
+#AI
+#에이전트
+#해킹
+댓글
+좋아요
+슬퍼요
+화나요
+후속요청
+국내 최대 원스톱
+콘텐츠 제공 플랫폼
+함께 보면 좋은 콘텐츠
+by
+데이블
+광고
+함께 읽기 좋은 콘텐츠
+Taboola 후원링크
+광고
+광고
+광고
+연합 마이뉴스
+다양한 주제별 맞춤
+추천 뉴스를 제공합니다.
+북마크
+공유
+카카오톡
+페이스북
+X
+페이스북 메신저
+네이버 밴드
+닫기
+URL이 복사되었습니다.
+댓글
+글자크기
+본문 글자 크기 조정
+폰트 1단계 13px
+폰트 2단계 16px
+폰트 3단계 18px
+폰트 4단계 20px
+폰트 5단계 22px
+닫기
+프린트
+제보</pre>
+      <div class="source">
+        <strong>출처 URL</strong> <span style="color:#999;">(복사해서 브라우저에 붙여넣어야 원문 사이트로 이동할 수 있습니다)</span>
+        <div class="url">https://www.yna.co.kr/view/AKR20260907021600017?input=1195m</div>
+      </div>
+    </article>
+    <div class="footer">GitHub Actions + Gemini/Groq AI 자동 생성 | 2026-09-07 08:45 KST</div>
+  </main>
+</body>
+</html>
