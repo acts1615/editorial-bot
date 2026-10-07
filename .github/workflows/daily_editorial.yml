@@ -2,8 +2,9 @@ name: 잡다한 사설들
 
 on:
   schedule:
-    - cron: '0 22 * * *'
-    - cron: '0 10 * * *'
+    # 발송 목표: KST 07:00 / 19:00. 큐 지연 대비 2시간 일찍 시작하고 main.py가 정시까지 대기
+    - cron: '0 20 * * *'
+    - cron: '0 8 * * *'
   workflow_dispatch:
 
 permissions:
@@ -12,7 +13,7 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

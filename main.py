@@ -1084,6 +1084,17 @@ if __name__ == "__main__":
     build_article_pages(all_articles, edition, start)
     print()
 
+    # 정시 발송: 스케줄 실행은 GitHub 큐 지연이 크므로 일찍 시작해 두고 목표 시각까지 대기
+    if os.environ.get("GITHUB_EVENT_NAME") == "schedule":
+        now = datetime.now(KST)
+        target = now.replace(hour=7 if now.hour < 12 else 19, minute=0, second=0, microsecond=0)
+        wait = (target - now).total_seconds()
+        if 0 < wait <= 4 * 3600:
+            print(f"⏳ 정시 발송 대기: {int(wait)}초 ({target.strftime('%H:%M')} KST)")
+            time.sleep(wait)
+        else:
+            print("⚠️ 목표 시각이 지나 즉시 발송합니다.")
+
     print("⑩ 이메일 발송 중...")
     subject, html, plain = build_email(editorials, sisain, security_news, trending_news, summaries, edition, start, end, news_summaries)
     send_gmail(subject, html, plain)
