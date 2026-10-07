@@ -177,12 +177,12 @@ def get_time_window():
         edition = "🌆 저녁판"
     return start, end, edition
 
-PAPERS = ["한겨레", "조선일보", "동아일보", "경향신문", "중앙일보"]
+PAPERS = ["한겨레", "문화일보", "매일경제", "경향신문", "중앙일보"]
 
 PAPER_DOMAINS = {
     "한겨레":   ["hani.co.kr"],
-    "조선일보": ["chosun.com"],
-    "동아일보": ["donga.com"],
+    "문화일보": ["munhwa.com"],
+    "매일경제": ["mk.co.kr"],
     "경향신문": ["khan.co.kr"],
     "중앙일보": ["joongang.co.kr", "joins.com"],
 }
@@ -191,6 +191,7 @@ DOMAIN_TO_PAPER = {
     "hani.co.kr":     "한겨레",
     "chosun.com":     "조선일보",
     "donga.com":      "동아일보",
+    "munhwa.com":     "문화일보",
     "khan.co.kr":     "경향신문",
     "joongang.co.kr": "중앙일보",
     "joins.com":      "중앙일보",
@@ -218,6 +219,7 @@ PAPER_CONFIG = {
     "한겨레":   {"body": [".article-text", ".text"], "author": [".byline strong"]},
     "조선일보": {"body": [".article-body"],           "author": [".article__author-name"]},
     "동아일보": {"body": [".article_txt"],            "author": [".reporter_name"]},
+    "문화일보": {"body": ["#NewsAdContent", ".article_body", ".article-body"], "author": [".byline", ".writer"]},
     "경향신문": {"body": [".art_body"],               "author": [".reporter_area .name"]},
     "중앙일보": {"body": [".article_body"],           "author": [".byline__name"]},
     "연합뉴스": {"body": ["#articleWrap", ".story-news", "#article-view-content-div", ".article"],
@@ -301,7 +303,7 @@ def get_editorials():
     NOT_EDITORIAL = ["[단독]", "[인터뷰]", "학위복", "[속보]", "[포토]", "[영상]"]
     found = {}
 
-    queries = ["[사설]", "사설 한겨레 조선일보", "신문사설 오늘"]
+    queries = ["[사설]", "사설 한겨레 문화일보 매일경제", "신문사설 오늘"]
 
     for query in queries:
         if len(found) >= len(PAPERS):
@@ -680,6 +682,7 @@ PAPER_SLUGS = {
     "한겨레": "hani",
     "조선일보": "chosun",
     "동아일보": "donga",
+    "문화일보": "munhwa",
     "경향신문": "khan",
     "중앙일보": "joongang",
     "연합뉴스": "yna",
@@ -1080,6 +1083,17 @@ if __name__ == "__main__":
     all_articles = list(editorials) + list(trending_news or []) + list(security_news or [])
     build_article_pages(all_articles, edition, start)
     print()
+
+    # 정시 발송: 스케줄 실행은 GitHub 큐 지연이 크므로 일찍 시작해 두고 목표 시각까지 대기
+    if os.environ.get("GITHUB_EVENT_NAME") == "schedule":
+        now = datetime.now(KST)
+        target = now.replace(hour=7 if now.hour < 12 else 19, minute=0, second=0, microsecond=0)
+        wait = (target - now).total_seconds()
+        if 0 < wait <= 4 * 3600:
+            print(f"⏳ 정시 발송 대기: {int(wait)}초 ({target.strftime('%H:%M')} KST)")
+            time.sleep(wait)
+        else:
+            print("⚠️ 목표 시각이 지나 즉시 발송합니다.")
 
     print("⑩ 이메일 발송 중...")
     subject, html, plain = build_email(editorials, sisain, security_news, trending_news, summaries, edition, start, end, news_summaries)
