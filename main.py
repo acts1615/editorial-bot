@@ -177,12 +177,12 @@ def get_time_window():
         edition = "🌆 저녁판"
     return start, end, edition
 
-PAPERS = ["한겨레", "조선일보", "동아일보", "경향신문", "중앙일보"]
+PAPERS = ["한겨레", "문화일보", "매일경제", "경향신문", "중앙일보"]
 
 PAPER_DOMAINS = {
     "한겨레":   ["hani.co.kr"],
-    "조선일보": ["chosun.com"],
-    "동아일보": ["donga.com"],
+    "문화일보": ["munhwa.com"],
+    "매일경제": ["mk.co.kr"],
     "경향신문": ["khan.co.kr"],
     "중앙일보": ["joongang.co.kr", "joins.com"],
 }
@@ -191,6 +191,7 @@ DOMAIN_TO_PAPER = {
     "hani.co.kr":     "한겨레",
     "chosun.com":     "조선일보",
     "donga.com":      "동아일보",
+    "munhwa.com":     "문화일보",
     "khan.co.kr":     "경향신문",
     "joongang.co.kr": "중앙일보",
     "joins.com":      "중앙일보",
@@ -218,6 +219,7 @@ PAPER_CONFIG = {
     "한겨레":   {"body": [".article-text", ".text"], "author": [".byline strong"]},
     "조선일보": {"body": [".article-body"],           "author": [".article__author-name"]},
     "동아일보": {"body": [".article_txt"],            "author": [".reporter_name"]},
+    "문화일보": {"body": ["#NewsAdContent", ".article_body", ".article-body"], "author": [".byline", ".writer"]},
     "경향신문": {"body": [".art_body"],               "author": [".reporter_area .name"]},
     "중앙일보": {"body": [".article_body"],           "author": [".byline__name"]},
     "연합뉴스": {"body": ["#articleWrap", ".story-news", "#article-view-content-div", ".article"],
@@ -301,7 +303,7 @@ def get_editorials():
     NOT_EDITORIAL = ["[단독]", "[인터뷰]", "학위복", "[속보]", "[포토]", "[영상]"]
     found = {}
 
-    queries = ["[사설]", "사설 한겨레 조선일보", "신문사설 오늘"]
+    queries = ["[사설]", "사설 한겨레 문화일보 매일경제", "신문사설 오늘"]
 
     for query in queries:
         if len(found) >= len(PAPERS):
@@ -680,6 +682,7 @@ PAPER_SLUGS = {
     "한겨레": "hani",
     "조선일보": "chosun",
     "동아일보": "donga",
+    "문화일보": "munhwa",
     "경향신문": "khan",
     "중앙일보": "joongang",
     "연합뉴스": "yna",
