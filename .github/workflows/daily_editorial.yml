@@ -2,9 +2,8 @@ name: 잡다한 사설들
 
 on:
   schedule:
-    # 발송 목표: KST 07:00 / 19:00. 큐 지연 대비 2시간 일찍 시작하고 main.py가 정시까지 대기
+    # 발송 목표: 매일 KST 07:00. 큐 지연 대비 2시간 일찍 시작하고 main.py가 정시까지 대기
     - cron: '0 20 * * *'
-    - cron: '0 8 * * *'
   workflow_dispatch:
 
 permissions:
