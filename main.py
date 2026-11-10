@@ -3,7 +3,7 @@
 구조: 신문사/제목/작성자 → AI 요약 → 원문 (신문사별 개별 구성)
 """
 
-import os, re, smtplib, json, hashlib, shutil, time
+import os, re, sys, smtplib, json, hashlib, shutil, time
 from datetime import datetime, timezone, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -1037,11 +1037,33 @@ def send_gmail(subject, html, plain):
             print(f"✅ 발송 완료 → {masked}")
 
 
-if __name__ == "__main__":
+PAYLOAD_PATH = Path("out/email.json")
+SENT_DIR     = Path("sent")
+
+
+def set_output(key, value):
+    path = os.environ.get("GITHUB_OUTPUT")
+    if path:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(f"{key}={value}\n")
+
+
+def sent_marker():
+    return SENT_DIR / f"{datetime.now(KST).strftime('%Y-%m-%d')}.txt"
+
+
+def run_build():
+    """수집 → 요약 → 원문 페이지 생성 → 메일 본문을 파일로 저장 (발송은 하지 않음)."""
     now = datetime.now(KST)
     print(f"\n{'='*55}")
     print(f"📰 신문 사설 봇 시작: {now.strftime('%Y-%m-%d %H:%M KST')}")
     print(f"{'='*55}\n")
+
+    # 예비 스케줄 실행: 오늘 이미 발송했다면 중복 발송하지 않음
+    if os.environ.get("GITHUB_EVENT_NAME") == "schedule" and sent_marker().exists():
+        print("✅ 오늘 이미 발송되어 건너뜁니다.")
+        set_output("skip", "true")
+        return
 
     start, end, edition = get_time_window()
     print(f"📅 수집 범위: {start.strftime('%m/%d %H:%M')} ~ {end.strftime('%m/%d %H:%M')} ({edition})\n")
@@ -1095,7 +1117,52 @@ if __name__ == "__main__":
         else:
             print("⚠️ 목표 시각이 지나 즉시 발송합니다.")
 
-    print("⑩ 이메일 발송 중...")
+    print("⑩ 메일 본문 생성 중...")
     subject, html, plain = build_email(editorials, sisain, security_news, trending_news, summaries, edition, start, end, news_summaries)
-    send_gmail(subject, html, plain)
+    probe_url = next((a.get("text_page_url") for a in all_articles if a.get("text_page_url")), "")
+    # 원문 페이지 배포가 실패했을 때를 위한 대체 본문 (외부 원문 링크 사용)
+    for a in all_articles:
+        a.pop("text_page_url", None)
+    _, html_fb, plain_fb = build_email(editorials, sisain, security_news, trending_news, summaries, edition, start, end, news_summaries)
+
+    PAYLOAD_PATH.parent.mkdir(exist_ok=True)
+    PAYLOAD_PATH.write_text(json.dumps({
+        "subject": subject, "html": html, "plain": plain,
+        "html_fallback": html_fb, "plain_fallback": plain_fb,
+    }, ensure_ascii=False), encoding="utf-8")
+    set_output("probe_url", probe_url)
+    set_output("skip", "false")
+    print("   → 저장 완료\n")
+
+
+def run_send():
+    """저장된 메일 본문을 목표 시각(KST 07:00)에 맞춰 발송."""
+    data = json.loads(PAYLOAD_PATH.read_text(encoding="utf-8"))
+    use_fallback = os.environ.get("PAGES_OK") == "false"
+    if use_fallback:
+        print("⚠️ 원문 페이지 배포를 확인하지 못해 외부 원문 링크 버전으로 발송합니다.")
+
+    # 수동 실행(send_now=true)은 바로 발송, 그 외에는 07:00 직전이면 정시까지 대기
+    if os.environ.get("SEND_NOW") != "true":
+        now = datetime.now(KST)
+        target = now.replace(hour=7, minute=0, second=0, microsecond=0)
+        wait = (target - now).total_seconds()
+        if 0 < wait <= 1800:
+            print(f"⏳ 정시 발송 대기: {int(wait)}초")
+            time.sleep(wait)
+
+    print("📧 이메일 발송 중...")
+    send_gmail(data["subject"],
+               data["html_fallback" if use_fallback else "html"],
+               data["plain_fallback" if use_fallback else "plain"])
+    SENT_DIR.mkdir(exist_ok=True)
+    sent_marker().write_text(datetime.now(KST).isoformat(), encoding="utf-8")
     print("\n🎉 완료!")
+
+
+if __name__ == "__main__":
+    mode = sys.argv[1] if len(sys.argv) > 1 else "all"
+    if mode in ("build", "all"):
+        run_build()
+    if mode in ("send", "all") and PAYLOAD_PATH.exists():
+        run_send()

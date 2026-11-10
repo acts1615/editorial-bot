@@ -2,24 +2,37 @@ name: 잡다한 사설들
 
 on:
   schedule:
-    # 발송 목표: 매일 KST 07:00. 큐 지연 대비 2시간 일찍 시작하고 main.py가 정시까지 대기
-    - cron: '0 20 * * *'
+    # 예비용. 주 발송은 외부 스케줄러가 KST 06:50에 workflow_dispatch(send_now=false)로 호출한다.
+    # 오늘 이미 발송했다면 main.py가 건너뛴다.
+    - cron: '30 22 * * *'
   workflow_dispatch:
+    inputs:
+      send_now:
+        description: '기다리지 않고 바로 발송 (정시 발송 호출은 false)'
+        type: boolean
+        default: true
 
 permissions:
   contents: write
 
+concurrency:
+  group: editorial
+  cancel-in-progress: false
+
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - run: pip install -r requirements.txt
-      - run: python main.py
+
+      - name: Build (수집·요약·원문 페이지·메일 본문)
+        id: build
+        run: python main.py build
         env:
           NAVER_CLIENT_ID:     ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
@@ -34,13 +47,52 @@ jobs:
           RECIPIENT_EMAIL5:    ${{ secrets.RECIPIENT_EMAIL5 }}
           APPS_SCRIPT_URL:     ${{ secrets.APPS_SCRIPT_URL }}
           BASE_PAGES_URL:      https://acts1615.github.io/editorial-bot
+
       - name: Commit generated original article pages
+        if: steps.build.outputs.skip != 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if [ -d originals ]; then
-            git add -A originals/
-          fi
+          git add -A originals/
           git diff --cached --quiet || git commit -m "Add generated original article pages"
-          git diff --cached --quiet && echo "No original article page changes to commit"
+          git pull --rebase origin main
+          git push
+
+      - name: Wait for GitHub Pages
+        id: pages
+        if: steps.build.outputs.skip != 'true' && steps.build.outputs.probe_url != ''
+        run: |
+          # 배포가 끝나 원문 페이지가 열릴 때까지 최대 10분 확인
+          for i in $(seq 1 40); do
+            if curl -fsS -o /dev/null "${{ steps.build.outputs.probe_url }}"; then
+              echo "Pages 배포 확인"; echo "ok=true" >> "$GITHUB_OUTPUT"; exit 0
+            fi
+            sleep 15
+          done
+          echo "::warning::Pages 배포를 확인하지 못했습니다. 외부 링크 버전으로 발송합니다."
+          echo "ok=false" >> "$GITHUB_OUTPUT"
+
+      - name: Send email
+        if: steps.build.outputs.skip != 'true'
+        run: python main.py send
+        env:
+          SENDER_EMAIL:       ${{ secrets.SENDER_EMAIL }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          RECIPIENT_EMAIL:    ${{ secrets.RECIPIENT_EMAIL }}
+          RECIPIENT_EMAIL2:   ${{ secrets.RECIPIENT_EMAIL2 }}
+          RECIPIENT_EMAIL3:   ${{ secrets.RECIPIENT_EMAIL3 }}
+          RECIPIENT_EMAIL4:   ${{ secrets.RECIPIENT_EMAIL4 }}
+          RECIPIENT_EMAIL5:   ${{ secrets.RECIPIENT_EMAIL5 }}
+          APPS_SCRIPT_URL:    ${{ secrets.APPS_SCRIPT_URL }}
+          SEND_NOW:           ${{ inputs.send_now }}
+          PAGES_OK:           ${{ steps.pages.outputs.ok }}
+
+      - name: Record sent marker
+        if: steps.build.outputs.skip != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A sent/
+          git diff --cached --quiet || git commit -m "Record daily send"
+          git pull --rebase origin main
           git push
